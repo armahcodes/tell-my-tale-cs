@@ -1,0 +1,103 @@
+import { createTool } from '@mastra/core/tools';
+import { z } from 'zod';
+
+export const escalationTool = createTool({
+  id: 'escalation',
+  description: 'Escalate a conversation to a human customer success agent. Use this when the customer requests human assistance, when the issue is outside your capabilities, when high frustration is detected, or after 3 failed resolution attempts.',
+  inputSchema: z.object({
+    reason: z.enum([
+      'customer_requested',
+      'high_frustration',
+      'outside_capabilities',
+      'failed_resolution_attempts',
+      'sensitive_situation',
+      'refund_request',
+      'legal_media_inquiry',
+      'quality_complaint',
+      'other'
+    ]).describe('The reason for escalation'),
+    reasonDetails: z.string().describe('Detailed explanation of why escalation is needed'),
+    customerSummary: z.string().describe('Brief summary of the customer\'s issue'),
+    attemptedSolutions: z.array(z.string()).optional().describe('List of solutions already attempted'),
+    orderNumber: z.string().optional().describe('Related order number if applicable'),
+    priority: z.enum(['low', 'medium', 'high', 'urgent']).describe('Recommended priority level'),
+    sentimentScore: z.number().min(-1).max(1).optional().describe('Customer sentiment score from -1 (very negative) to 1 (very positive)'),
+  }),
+  outputSchema: z.object({
+    escalationId: z.string(),
+    status: z.enum(['created', 'queued', 'assigned']),
+    estimatedWaitTime: z.string(),
+    message: z.string(),
+    nextSteps: z.array(z.string()),
+  }),
+  // v1 signature: (inputData, context) instead of ({ context })
+  execute: async (inputData) => {
+    const { reason, reasonDetails, customerSummary, attemptedSolutions, orderNumber, priority, sentimentScore } = inputData;
+    
+    // Generate escalation ticket ID
+    const escalationId = `ESC-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    
+    // Determine estimated wait time based on priority
+    const waitTimes: Record<string, string> = {
+      urgent: '< 5 minutes',
+      high: '5-10 minutes',
+      medium: '10-20 minutes',
+      low: '20-30 minutes',
+    };
+
+    // In a real implementation, this would:
+    // 1. Create a ticket in the helpdesk/CRM system
+    // 2. Assign to available agent based on skills and workload
+    // 3. Send notification to agent
+    // 4. Log full conversation history
+    
+    console.log('[Escalation] Ticket created:', {
+      escalationId,
+      reason,
+      reasonDetails,
+      customerSummary,
+      attemptedSolutions,
+      orderNumber,
+      priority,
+      sentimentScore,
+      timestamp: new Date().toISOString(),
+    });
+
+    const nextSteps = [
+      'Your request has been flagged for priority handling',
+      'A customer success specialist will review your case',
+      'You\'ll receive a response via your preferred contact method',
+    ];
+
+    if (priority === 'urgent' || priority === 'high') {
+      nextSteps.unshift('A senior team member has been notified');
+    }
+
+    let message = '';
+    
+    switch (reason) {
+      case 'customer_requested':
+        message = 'I completely understand you\'d like to speak with a team member directly. I\'ve created a priority ticket for you.';
+        break;
+      case 'high_frustration':
+        message = 'I can see this has been frustrating, and I want to make sure you get the best possible help. I\'m connecting you with one of our senior team members.';
+        break;
+      case 'refund_request':
+        message = 'I\'ve escalated your refund request to our team who can process this for you right away.';
+        break;
+      case 'quality_complaint':
+        message = 'I\'m so sorry about the quality issue. I\'ve flagged this as a priority and our team will personally look into this for you.';
+        break;
+      default:
+        message = 'I\'ve escalated your request to our customer success team who will be able to assist you further.';
+    }
+
+    return {
+      escalationId,
+      status: (priority === 'urgent' ? 'assigned' : 'queued') as 'created' | 'queued' | 'assigned',
+      estimatedWaitTime: waitTimes[priority],
+      message,
+      nextSteps,
+    };
+  },
+});
