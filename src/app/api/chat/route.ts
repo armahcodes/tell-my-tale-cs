@@ -31,14 +31,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if OpenAI API key is configured
-    // AI SDK reads from OPENAI_API_KEY environment variable automatically
-    const apiKey = process.env.OPENAI_API_KEY;
+    // Check if Vercel AI Gateway API key is configured
+    const apiKey = process.env.AI_GATEWAY_API_KEY;
     if (!apiKey) {
       return new Response(
         JSON.stringify({ 
-          error: 'OpenAI API key not configured',
-          details: 'Set OPENAI_API_KEY in environment variables'
+          error: 'AI Gateway API key not configured',
+          details: 'Set AI_GATEWAY_API_KEY in environment variables (Vercel AI Gateway key starting with vck_)'
         }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
@@ -156,8 +155,8 @@ export async function POST(req: NextRequest) {
       if (errorMessage.includes('API key') || errorMessage.includes('Unauthorized') || errorMessage.includes('401')) {
         return new Response(
           JSON.stringify({ 
-            error: 'Invalid OpenAI API key',
-            details: 'Check that your OPENAI_API_KEY is valid and has sufficient credits'
+            error: 'Invalid AI Gateway API key',
+            details: 'Check that your AI_GATEWAY_API_KEY is valid in Vercel project settings'
           }),
           { status: 401, headers: { 'Content-Type': 'application/json' } }
         );
