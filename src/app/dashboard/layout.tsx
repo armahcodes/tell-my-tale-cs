@@ -12,7 +12,7 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gray-50 flex">
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -41,20 +41,18 @@ export default function DashboardLayout({
       {/* Sidebar - Desktop always visible, Mobile toggle */}
       <div className={`
         fixed top-0 left-0 h-full z-50 transform transition-transform duration-300 ease-in-out
-        lg:translate-x-0 lg:static lg:z-0
+        lg:relative lg:translate-x-0 lg:z-0 lg:flex-shrink-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
       {/* Main Content */}
-      <div className="lg:ml-72">
-        <main className="pt-16 lg:pt-0 min-h-screen bg-gray-50">
-          <div className="p-4 md:p-6 lg:p-8">
-            {children}
-          </div>
-        </main>
-      </div>
+      <main className="flex-1 pt-16 lg:pt-0 min-h-screen">
+        <div className="p-4 md:p-6 lg:p-8">
+          {children}
+        </div>
+      </main>
     </div>
   );
 }
