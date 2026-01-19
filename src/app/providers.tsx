@@ -6,17 +6,17 @@
  */
 
 import { TRPCProvider } from '@/lib/trpc';
-import { AuthProvider } from '@/lib/auth';
 import { ToastProvider } from '@/components/ui/Toast';
+import { NeonAuthProvider } from '@/lib/auth/neon-auth-provider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <TRPCProvider>
-      <AuthProvider>
+    <NeonAuthProvider>
+      <TRPCProvider>
         <ToastProvider>
           {children}
         </ToastProvider>
-      </AuthProvider>
-    </TRPCProvider>
+      </TRPCProvider>
+    </NeonAuthProvider>
   );
 }

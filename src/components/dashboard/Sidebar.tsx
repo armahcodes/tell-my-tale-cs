@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -14,8 +14,12 @@ import {
   Sparkles,
   Bell,
   X,
+  Loader2,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
+import { signOut } from '@/lib/auth/neon-auth';
+import { useState } from 'react';
+import { useToast } from '@/components/ui/Toast';
 
 const navItems = [
   { icon: Home, label: 'Dashboard', href: '/dashboard' },
@@ -27,12 +31,23 @@ const navItems = [
   { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
 ];
 
-interface SidebarProps {
-  onClose?: () => void;
+interface User {
+  id?: string;
+  email?: string;
+  name?: string;
+  image?: string;
 }
 
-export function Sidebar({ onClose }: SidebarProps) {
+interface SidebarProps {
+  onClose?: () => void;
+  user?: User | null;
+}
+
+export function Sidebar({ onClose, user }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { showToast } = useToast();
+  const [isSigningOut, setIsSigningOut] = useState(false);
   
   // Get stats for badge counts
   const { data: stats } = trpc.dashboard.getStats.useQuery(undefined, {
@@ -41,6 +56,39 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   const activeNow = stats?.activeNow || 0;
   const aiResolutionRate = stats?.aiResolutionRate || 0;
+
+  // Get user initials
+  const getUserInitials = () => {
+    if (user?.name) {
+      return user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    }
+    if (user?.email) {
+      return user.email.slice(0, 2).toUpperCase();
+    }
+    return 'U';
+  };
+
+  // Get display name
+  const getDisplayName = () => {
+    if (user?.name) return user.name;
+    if (user?.email) return user.email.split('@')[0];
+    return 'User';
+  };
+
+  // Handle sign out
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    try {
+      await signOut();
+      showToast('success', 'Signed out successfully');
+      router.push('/login');
+    } catch (error) {
+      console.error('Sign out error:', error);
+      showToast('error', 'Failed to sign out');
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
 
   return (
     <aside className="w-72 bg-white border-r border-gray-200 flex flex-col h-screen">
@@ -128,20 +176,38 @@ export function Sidebar({ onClose }: SidebarProps) {
       {/* User & Sign Out */}
       <div className="p-3 md:p-4 border-t border-gray-200">
         <div className="flex items-center gap-3 mb-3 md:mb-4">
-          <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-[#1B2838] flex items-center justify-center text-white font-semibold text-sm">
-            CS
-          </div>
+          {user?.image ? (
+            <img 
+              src={user.image} 
+              alt={getDisplayName()}
+              className="w-8 h-8 md:w-10 md:h-10 rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-[#1B2838] flex items-center justify-center text-white font-semibold text-sm">
+              {getUserInitials()}
+            </div>
+          )}
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-xs md:text-sm text-[#1B2838] truncate">CS Manager</p>
-            <p className="text-[10px] md:text-xs text-gray-500 truncate">Admin</p>
+            <p className="font-medium text-xs md:text-sm text-[#1B2838] truncate">{getDisplayName()}</p>
+            <p className="text-[10px] md:text-xs text-gray-500 truncate">{user?.email || 'Admin'}</p>
           </div>
           <button className="p-1.5 md:p-2 rounded-lg hover:bg-gray-100 transition-colors relative">
             <Bell className="w-4 h-4 md:w-5 md:h-5 text-gray-500" />
           </button>
         </div>
-        <button className="w-full flex items-center justify-center gap-2 px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-gray-500 hover:text-[#1B2838] hover:bg-gray-100 transition-colors border border-gray-200">
-          <LogOut className="w-4 h-4" />
-          <span className="text-xs md:text-sm font-medium">Sign Out</span>
+        <button 
+          onClick={handleSignOut}
+          disabled={isSigningOut}
+          className="w-full flex items-center justify-center gap-2 px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 transition-colors border border-gray-200 disabled:opacity-50"
+        >
+          {isSigningOut ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <LogOut className="w-4 h-4" />
+          )}
+          <span className="text-xs md:text-sm font-medium">
+            {isSigningOut ? 'Signing out...' : 'Sign Out'}
+          </span>
         </button>
       </div>
     </aside>
