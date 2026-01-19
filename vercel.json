@@ -8,8 +8,5 @@
     "src/app/api/**/*.ts": {
       "maxDuration": 60
     }
-  },
-  "env": {
-    "OPENAI_API_KEY": "@openai-api-key"
   }
 }
