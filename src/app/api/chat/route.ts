@@ -31,13 +31,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if API key is configured
-    const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.OPENAI_API_KEY;
+    // Check if OpenAI API key is configured
+    // AI SDK reads from OPENAI_API_KEY environment variable automatically
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return new Response(
         JSON.stringify({ 
-          error: 'AI API key not configured',
-          details: 'Set AI_GATEWAY_API_KEY or OPENAI_API_KEY in environment variables'
+          error: 'OpenAI API key not configured',
+          details: 'Set OPENAI_API_KEY in environment variables'
         }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest) {
     }));
 
     try {
-      // Stream the response
+      // Stream the response using Mastra agent
       const result = await agent.stream(formattedMessages);
       
       // Get the text stream from the result
@@ -123,6 +124,7 @@ export async function POST(req: NextRequest) {
               });
             }
           } catch (error) {
+            console.error('Stream error:', error);
             controller.error(error);
           }
         },
@@ -141,25 +143,41 @@ export async function POST(req: NextRequest) {
       
       return new Response(webStream, { headers });
     } catch (streamError) {
-      console.error('Error in agent stream', { error: streamError });
+      console.error('Upstream LLM API error from openai (model: gpt-4o)', { 
+        error: streamError,
+        runId: crypto.randomUUID(),
+        provider: 'openai',
+        modelId: 'gpt-4o'
+      });
       
       const errorMessage = streamError instanceof Error ? streamError.message : String(streamError);
       
+      // Handle specific error types
       if (errorMessage.includes('API key') || errorMessage.includes('Unauthorized') || errorMessage.includes('401')) {
         return new Response(
           JSON.stringify({ 
-            error: 'Invalid API key',
-            details: 'Check that your AI_GATEWAY_API_KEY or OPENAI_API_KEY is valid'
+            error: 'Invalid OpenAI API key',
+            details: 'Check that your OPENAI_API_KEY is valid and has sufficient credits'
           }),
           { status: 401, headers: { 'Content-Type': 'application/json' } }
         );
       }
       
-      if (errorMessage.includes('TLS') || errorMessage.includes('ECONNRESET') || errorMessage.includes('network')) {
+      if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
+        return new Response(
+          JSON.stringify({ 
+            error: 'Rate limit exceeded',
+            details: 'Too many requests. Please try again in a moment.'
+          }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      if (errorMessage.includes('TLS') || errorMessage.includes('ECONNRESET') || errorMessage.includes('network') || errorMessage.includes('socket')) {
         return new Response(
           JSON.stringify({ 
             error: 'Connection error',
-            details: 'Could not connect to AI service. If using Vercel AI Gateway, ensure it\'s properly configured in your Vercel project.'
+            details: 'Could not connect to OpenAI. Please try again.'
           }),
           { status: 503, headers: { 'Content-Type': 'application/json' } }
         );

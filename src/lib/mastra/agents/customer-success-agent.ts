@@ -1,4 +1,5 @@
 import { Agent } from '@mastra/core/agent';
+import { openai } from '@ai-sdk/openai';
 import { orderLookupTool } from '../tools/order-lookup';
 import { faqRetrievalTool } from '../tools/faq-retrieval';
 import { productInfoTool } from '../tools/product-info';
@@ -72,33 +73,21 @@ Say: "Great news! I found your order for little Emma's adventure book! It's curr
 
 Remember: Every book tells a child's unique story. You're part of making that magic happen!`;
 
-// Get the API configuration from environment variables
-// Support both direct OpenAI and Vercel AI Gateway
-const getModelConfig = () => {
-  const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.OPENAI_API_KEY;
-  const baseUrl = process.env.OPENAI_BASE_URL;
-  
-  // If using Vercel AI Gateway key (vck_...) or custom base URL is set
-  if (baseUrl || apiKey?.startsWith('vck_')) {
-    return {
-      id: 'openai/gpt-4o' as const,
-      url: baseUrl || 'https://gateway.ai.vercel.app/v1',
-      apiKey: apiKey,
-    };
-  }
-  
-  // Standard OpenAI configuration
-  return {
-    id: 'openai/gpt-4o' as const,
-    apiKey: apiKey,
-  };
-};
-
+/**
+ * Customer Success Agent using AI SDK with OpenAI
+ * 
+ * This agent uses the Vercel AI SDK's OpenAI provider directly,
+ * which provides reliable connections and proper error handling.
+ * 
+ * @see https://ai-sdk.dev/
+ */
 export const customerSuccessAgent = new Agent({
   id: 'customerSuccess',
   name: 'TellMyTale Customer Success',
   instructions: TELLMYTALE_SYSTEM_PROMPT,
-  model: getModelConfig(),
+  // Use AI SDK's OpenAI provider directly
+  // This connects directly to OpenAI API, not through Vercel AI Gateway
+  model: openai('gpt-4o'),
   tools: {
     orderLookup: orderLookupTool,
     faqRetrieval: faqRetrievalTool,
