@@ -1,6 +1,5 @@
 import { mastra } from '@/lib/mastra';
 import { NextRequest } from 'next/server';
-import { CoreMessage } from 'ai';
 import { dbService } from '@/lib/db/service';
 import { auth } from '@/lib/auth/auth';
 import { headers } from 'next/headers';
@@ -12,6 +11,11 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
 }
+
+type AgentMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
 
 interface ChatRequestBody {
   messages: ChatMessage[];
@@ -107,7 +111,7 @@ export async function POST(req: NextRequest) {
         : '';
 
     // Format messages for the agent with user context
-    const formattedMessages: CoreMessage[] = [
+    const formattedMessages: AgentMessage[] = [
       ...(userContext ? [{
         role: 'system' as const,
         content: userContext,
