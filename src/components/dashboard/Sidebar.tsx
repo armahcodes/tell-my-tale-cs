@@ -10,7 +10,7 @@ import { motion } from 'framer-motion';
 import {
   Home,
   MessageSquare,
-  Package,
+  Ticket,
   Users,
   BarChart3,
   Settings,
@@ -28,7 +28,7 @@ import { useToast } from '@/components/ui/Toast';
 const navItems = [
   { icon: Home, label: 'Dashboard', href: '/dashboard' },
   { icon: MessageSquare, label: 'Conversations', href: '/dashboard/conversations' },
-  { icon: Package, label: 'Orders', href: '/dashboard/orders' },
+  { icon: Ticket, label: 'Tickets', href: '/dashboard/orders' },
   { icon: Users, label: 'Customers', href: '/dashboard/customers' },
   { icon: BarChart3, label: 'Analytics', href: '/dashboard/analytics' },
   { icon: Sparkles, label: 'Test Chat', href: '/dashboard/chat' },
