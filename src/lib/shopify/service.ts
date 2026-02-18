@@ -1,7 +1,6 @@
 /**
  * Shopify Service - Unified API for store operations
  * Combines Storefront API, Customer Account API, and Admin API
- * Falls back to mock data when Admin API is unavailable
  * 
  * Documentation: https://shopify.dev/docs/api/customer/2025-10
  */
@@ -24,21 +23,10 @@ import {
   type AdminOrder,
   type AdminCustomer,
 } from './admin';
-import {
-  MOCK_CUSTOMERS,
-  MOCK_ORDERS,
-  MOCK_PRODUCTS,
-  MOCK_STATS,
-  getMockCustomerByEmail,
-  getMockCustomerById,
-  getMockOrderById,
-  getMockOrdersByEmail,
-} from './mock-data';
 
 // Check if Admin API is available
-const USE_MOCK_DATA = !process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || 
-  process.env.SHOPIFY_ADMIN_ACCESS_TOKEN.startsWith('shpss_') ||
-  process.env.USE_MOCK_DATA === 'true';
+const ADMIN_API_AVAILABLE = !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN && 
+  !process.env.SHOPIFY_ADMIN_ACCESS_TOKEN.startsWith('shpss_');
 
 // Types
 export interface ShopifyProduct {
@@ -66,7 +54,6 @@ export interface ShopifyProduct {
 
 export type OrderStatusType = 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
 
-// Production status for display
 export type ProductionStage = 'order_received' | 'in_production' | 'printing' | 'binding' | 'quality_check' | 'ready_to_ship';
 
 export interface OrderStatus {
@@ -122,7 +109,7 @@ class ShopifyService {
       return data.products.edges.map((edge: any) => this.transformProduct(edge.node));
     } catch (error) {
       console.error('Error fetching products:', error);
-      throw error;
+      return [];
     }
   }
 
@@ -140,7 +127,7 @@ class ShopifyService {
       return this.transformProduct(data.productByHandle);
     } catch (error) {
       console.error('Error fetching product:', error);
-      throw error;
+      return null;
     }
   }
 
@@ -217,23 +204,15 @@ class ShopifyService {
 
   /**
    * Look up order by order number (for non-authenticated users)
-   * Uses Admin API to search by order name, or mock data if unavailable
+   * Uses Admin API to search by order name
    */
   async lookupOrderByNumber(orderNumber: string, email: string): Promise<OrderStatus | null> {
-    if (USE_MOCK_DATA) {
-      const orders = getMockOrdersByEmail(email);
-      const order = orders.find(o => 
-        o.name.includes(orderNumber) || 
-        o.legacyResourceId === orderNumber
-      );
-      if (order) {
-        return this.transformMockOrder(order);
-      }
+    if (!ADMIN_API_AVAILABLE) {
+      console.warn('Admin API not configured - order lookup unavailable');
       return null;
     }
 
     try {
-      // Search for order by name (e.g., #1001 or TMT-1001)
       const query = `name:${orderNumber} email:${email}`;
       const data = await adminApiQuery<{ orders: { edges: { node: AdminOrder }[] } }>(
         ADMIN_ORDERS_QUERY,
@@ -243,7 +222,6 @@ class ShopifyService {
       if (!data.orders.edges.length) return null;
       
       const order = data.orders.edges[0].node;
-      // Verify email matches
       if (order.email?.toLowerCase() !== email.toLowerCase()) {
         return null;
       }
@@ -260,44 +238,25 @@ class ShopifyService {
   // ============================================
 
   /**
-   * Check if using mock data
+   * Check if Admin API is available
    */
-  isUsingMockData(): boolean {
-    return USE_MOCK_DATA;
+  isAdminApiAvailable(): boolean {
+    return ADMIN_API_AVAILABLE;
   }
 
   /**
-   * Get mock stats for dashboard
-   */
-  getMockStats() {
-    return MOCK_STATS;
-  }
-
-  /**
-   * Get all orders from the store (Admin API or mock data)
+   * Get all orders from the store (Admin API)
    */
   async getAllOrders(
     first: number = 50,
     after?: string,
     query?: string
-  ): Promise<{ orders: OrderStatus[]; pageInfo: { hasNextPage: boolean; endCursor?: string } }> {
-    if (USE_MOCK_DATA) {
-      let orders = [...MOCK_ORDERS];
-      
-      // Apply search filter if query provided
-      if (query) {
-        const searchLower = query.toLowerCase();
-        orders = orders.filter(o => 
-          o.name.toLowerCase().includes(searchLower) ||
-          o.email.toLowerCase().includes(searchLower) ||
-          o.customer.firstName?.toLowerCase().includes(searchLower) ||
-          o.customer.lastName?.toLowerCase().includes(searchLower)
-        );
-      }
-
+  ): Promise<{ orders: OrderStatus[]; pageInfo: { hasNextPage: boolean; endCursor?: string }; error?: string }> {
+    if (!ADMIN_API_AVAILABLE) {
       return {
-        orders: orders.slice(0, first).map(o => this.transformMockOrder(o)),
-        pageInfo: { hasNextPage: false, endCursor: undefined },
+        orders: [],
+        pageInfo: { hasNextPage: false },
+        error: 'Shopify Admin API not configured. Set SHOPIFY_ADMIN_ACCESS_TOKEN in environment variables.',
       };
     }
 
@@ -315,21 +274,23 @@ class ShopifyService {
       };
     } catch (error) {
       console.error('Error fetching all orders:', error);
-      throw error;
+      return {
+        orders: [],
+        pageInfo: { hasNextPage: false },
+        error: error instanceof Error ? error.message : 'Failed to fetch orders',
+      };
     }
   }
 
   /**
-   * Get a single order by ID (Admin API or mock data)
+   * Get a single order by ID (Admin API)
    */
   async getAdminOrderById(orderId: string): Promise<AdminOrder | null> {
-    if (USE_MOCK_DATA) {
-      const order = getMockOrderById(orderId);
-      return order as unknown as AdminOrder;
+    if (!ADMIN_API_AVAILABLE) {
+      return null;
     }
 
     try {
-      // Ensure proper GID format
       const gid = orderId.startsWith('gid://') 
         ? orderId 
         : `gid://shopify/Order/${orderId}`;
@@ -342,34 +303,23 @@ class ShopifyService {
       return data.order;
     } catch (error) {
       console.error('Error fetching order:', error);
-      throw error;
+      return null;
     }
   }
 
   /**
-   * Get all customers from the store (Admin API or mock data)
+   * Get all customers from the store (Admin API)
    */
   async getAllCustomers(
     first: number = 50,
     after?: string,
     query?: string
-  ): Promise<{ customers: AdminCustomer[]; pageInfo: { hasNextPage: boolean; endCursor?: string } }> {
-    if (USE_MOCK_DATA) {
-      let customers = [...MOCK_CUSTOMERS];
-      
-      // Apply search filter if query provided
-      if (query) {
-        const searchLower = query.toLowerCase();
-        customers = customers.filter(c => 
-          c.email.toLowerCase().includes(searchLower) ||
-          c.firstName?.toLowerCase().includes(searchLower) ||
-          c.lastName?.toLowerCase().includes(searchLower)
-        );
-      }
-
+  ): Promise<{ customers: AdminCustomer[]; pageInfo: { hasNextPage: boolean; endCursor?: string }; error?: string }> {
+    if (!ADMIN_API_AVAILABLE) {
       return {
-        customers: customers.slice(0, first) as unknown as AdminCustomer[],
-        pageInfo: { hasNextPage: false, endCursor: undefined },
+        customers: [],
+        pageInfo: { hasNextPage: false },
+        error: 'Shopify Admin API not configured. Set SHOPIFY_ADMIN_ACCESS_TOKEN in environment variables.',
       };
     }
 
@@ -387,21 +337,23 @@ class ShopifyService {
       };
     } catch (error) {
       console.error('Error fetching all customers:', error);
-      throw error;
+      return {
+        customers: [],
+        pageInfo: { hasNextPage: false },
+        error: error instanceof Error ? error.message : 'Failed to fetch customers',
+      };
     }
   }
 
   /**
-   * Get a single customer by ID with their orders (Admin API or mock data)
+   * Get a single customer by ID with their orders (Admin API)
    */
   async getAdminCustomerById(customerId: string): Promise<AdminCustomer | null> {
-    if (USE_MOCK_DATA) {
-      const customer = getMockCustomerById(customerId);
-      return customer as unknown as AdminCustomer;
+    if (!ADMIN_API_AVAILABLE) {
+      return null;
     }
 
     try {
-      // Ensure proper GID format
       const gid = customerId.startsWith('gid://') 
         ? customerId 
         : `gid://shopify/Customer/${customerId}`;
@@ -414,7 +366,7 @@ class ShopifyService {
       return data.customer;
     } catch (error) {
       console.error('Error fetching customer:', error);
-      throw error;
+      return null;
     }
   }
 
@@ -423,10 +375,8 @@ class ShopifyService {
     const fulfillment = adminOrder.fulfillments?.[0];
     const tracking = fulfillment?.trackingInfo?.[0];
     
-    // Determine status
     const { status, statusDescription } = this.determineAdminOrderStatus(adminOrder);
 
-    // Check if order can still be modified
     const processedAt = new Date(adminOrder.processedAt || adminOrder.createdAt);
     const hoursSinceOrder = (Date.now() - processedAt.getTime()) / (1000 * 60 * 60);
     const canBeModified = hoursSinceOrder <= 24 && ['pending', 'processing'].includes(status);
@@ -486,7 +436,6 @@ class ShopifyService {
     const fulfillmentStatus = order.displayFulfillmentStatus?.toUpperCase();
     
     if (fulfillmentStatus === 'FULFILLED') {
-      // Check if delivered
       const fulfillment = order.fulfillments?.[0];
       if (fulfillment?.displayStatus === 'DELIVERED') {
         return {
@@ -507,7 +456,6 @@ class ShopifyService {
       };
     }
 
-    // Unfulfilled orders
     const processedAt = new Date(order.processedAt || order.createdAt);
     const hoursSinceOrder = (Date.now() - processedAt.getTime()) / (1000 * 60 * 60);
 
@@ -562,10 +510,8 @@ class ShopifyService {
     const fulfillment = shopifyOrder.fulfillments?.[0];
     const tracking = fulfillment?.trackingInformation?.[0];
     
-    // Determine order status based on fulfillment
     const { status, statusDescription } = this.determineOrderStatus(shopifyOrder, fulfillment);
 
-    // Check if order can still be modified (within 24 hours and not yet shipped)
     const processedAt = new Date(shopifyOrder.processedAt);
     const hoursSinceOrder = (Date.now() - processedAt.getTime()) / (1000 * 60 * 60);
     const canBeModified = hoursSinceOrder <= 24 && ['pending', 'processing'].includes(status);
@@ -651,7 +597,6 @@ class ShopifyService {
       };
     }
     
-    // No fulfillment yet - check if order is very recent (pending) or in production (processing)
     const processedAt = new Date(shopifyOrder.processedAt);
     const hoursSinceOrder = (Date.now() - processedAt.getTime()) / (1000 * 60 * 60);
     
@@ -665,81 +610,6 @@ class ShopifyService {
     return {
       status: 'processing',
       statusDescription: 'Your personalized book is in production!',
-    };
-  }
-
-  // Transform mock order to our format
-  private transformMockOrder(mockOrder: any): OrderStatus {
-    const fulfillment = mockOrder.fulfillments?.[0];
-    const tracking = fulfillment?.trackingInfo?.[0];
-    
-    // Determine status based on displayFulfillmentStatus
-    let status: OrderStatusType = 'pending';
-    let statusDescription = 'Order received and being processed';
-
-    if (mockOrder.cancelledAt) {
-      status = 'cancelled';
-      statusDescription = 'This order has been cancelled';
-    } else if (mockOrder.displayFulfillmentStatus === 'FULFILLED') {
-      status = 'delivered';
-      statusDescription = 'Your book has been delivered!';
-    } else if (mockOrder.displayFulfillmentStatus === 'IN_PROGRESS') {
-      status = 'shipped';
-      statusDescription = 'Your book is on its way!';
-    } else if (mockOrder.displayFulfillmentStatus === 'UNFULFILLED') {
-      const processedAt = new Date(mockOrder.processedAt || mockOrder.createdAt);
-      const hoursSinceOrder = (Date.now() - processedAt.getTime()) / (1000 * 60 * 60);
-      if (hoursSinceOrder < 2) {
-        status = 'pending';
-        statusDescription = 'Order received and being processed';
-      } else {
-        status = 'processing';
-        statusDescription = 'Your personalized book is in production!';
-      }
-    }
-
-    const processedAt = new Date(mockOrder.processedAt || mockOrder.createdAt);
-    const hoursSinceOrder = (Date.now() - processedAt.getTime()) / (1000 * 60 * 60);
-    const canBeModified = hoursSinceOrder <= 24 && ['pending', 'processing'].includes(status);
-
-    return {
-      orderNumber: mockOrder.legacyResourceId || mockOrder.name.replace('#', '').replace('TMT-', ''),
-      orderId: mockOrder.id,
-      orderName: mockOrder.name,
-      customerName: mockOrder.shippingAddress 
-        ? `${mockOrder.shippingAddress.firstName || ''} ${mockOrder.shippingAddress.lastName || ''}`.trim()
-        : mockOrder.customer?.firstName && mockOrder.customer?.lastName
-          ? `${mockOrder.customer.firstName} ${mockOrder.customer.lastName}`
-          : 'Customer',
-      email: mockOrder.email,
-      status,
-      statusDescription,
-      fulfillmentStatus: mockOrder.displayFulfillmentStatus,
-      financialStatus: mockOrder.displayFinancialStatus,
-      processedAt: mockOrder.processedAt || mockOrder.createdAt,
-      totalPrice: mockOrder.totalPrice || mockOrder.totalPriceCurrency ? mockOrder.totalPrice : '0',
-      currencyCode: mockOrder.totalPriceCurrency || 'USD',
-      items: mockOrder.lineItems?.map((item: any) => ({
-        name: item.title,
-        quantity: item.quantity,
-        price: item.price,
-        customAttributes: item.customAttributes,
-      })) || [],
-      shippingAddress: mockOrder.shippingAddress ? {
-        firstName: mockOrder.shippingAddress.firstName || '',
-        lastName: mockOrder.shippingAddress.lastName || '',
-        address1: mockOrder.shippingAddress.address1 || '',
-        city: mockOrder.shippingAddress.city || '',
-        province: mockOrder.shippingAddress.province || '',
-        country: mockOrder.shippingAddress.country || '',
-        zip: mockOrder.shippingAddress.zip || '',
-      } : undefined,
-      tracking: tracking ? {
-        company: tracking.company,
-        number: tracking.number,
-        url: tracking.url,
-      } : undefined,
-      canBeModified,
     };
   }
 }

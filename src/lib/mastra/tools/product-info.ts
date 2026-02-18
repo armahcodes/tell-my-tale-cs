@@ -1,7 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { shopifyService } from '@/lib/shopify';
-import { MOCK_PRODUCTS } from '@/lib/shopify/mock-data';
 
 export const productInfoTool = createTool({
   id: 'product-info',
@@ -34,11 +33,9 @@ export const productInfoTool = createTool({
     customizationInfo: z.string().optional(),
     photoRequirements: z.string().optional(),
   }),
-  // v1 signature: (inputData, context) instead of ({ context })
   execute: async (inputData) => {
     const { productName, productHandle, listAll } = inputData;
 
-    // Standard customization and photo info (same for all books)
     const customizationInfo = `Each book can be personalized with:
 • Your child's name (featured throughout the story)
 • A custom dedication message
@@ -81,6 +78,16 @@ export const productInfoTool = createTool({
       // Get all products
       const allProducts = await shopifyService.getProducts(50);
 
+      // If no products found
+      if (allProducts.length === 0) {
+        return {
+          found: false,
+          message: `I'm having trouble loading our product catalog right now. Our personalized books typically range from $39.99 to $59.99 and can be customized with your child's name, photo, and more! Please try again or visit tellmytale.com for our full selection.`,
+          customizationInfo,
+          photoRequirements,
+        };
+      }
+
       // If list all requested
       if (listAll || !productName) {
         return {
@@ -89,7 +96,7 @@ export const productInfoTool = createTool({
             ...p,
             availableForSale: p.variants.some(v => v.availableForSale),
           })),
-          message: `We have ${allProducts.length} personalized books available! Each one is specially designed to make your child the star of their own story. All books are currently on sale at $39.99 (regularly $59.99)!`,
+          message: `We have ${allProducts.length} personalized books available! Each one is specially designed to make your child the star of their own story.`,
           customizationInfo,
           photoRequirements,
         };
@@ -99,7 +106,6 @@ export const productInfoTool = createTool({
       const searchResults = await shopifyService.searchProducts(productName);
 
       if (searchResults.length === 0) {
-        // Return all products with a helpful message
         return {
           found: false,
           products: allProducts.slice(0, 5).map(p => ({
@@ -126,46 +132,9 @@ export const productInfoTool = createTool({
     } catch (error) {
       console.error('Product lookup error:', error);
       
-      // Use mock products as fallback
-      const mockProducts = MOCK_PRODUCTS.map(p => ({
-        id: p.id,
-        title: p.title,
-        description: p.description,
-        handle: p.handle,
-        price: p.priceRange.minPrice,
-        compareAtPrice: undefined,
-        currencyCode: p.priceRange.currency,
-        images: p.images.map(img => ({ url: img.url, altText: img.altText })),
-        availableForSale: p.variants.some(v => v.available),
-        ageRange: undefined,
-        pageCount: undefined,
-        productionTime: '5-10 business days',
-      }));
-
-      // If searching by name, filter mock products
-      if (productName) {
-        const searchLower = productName.toLowerCase();
-        const filtered = mockProducts.filter(p =>
-          p.title.toLowerCase().includes(searchLower) ||
-          p.description.toLowerCase().includes(searchLower)
-        );
-        
-        if (filtered.length > 0) {
-          return {
-            found: true,
-            products: filtered,
-            message: `Found ${filtered.length} book${filtered.length > 1 ? 's' : ''} matching "${productName}"!`,
-            customizationInfo,
-            photoRequirements,
-          };
-        }
-      }
-
-      // Return all mock products
       return {
-        found: true,
-        products: mockProducts,
-        message: `We have ${mockProducts.length} personalized books available! Each one is specially designed to make your child the star of their own story. All books are currently on sale at $39.99 (regularly $59.99)!`,
+        found: false,
+        message: `I'm having trouble accessing our product catalog right now. Our personalized books are available at tellmytale.com! We offer adventure stories, ABC books, birthday books, and more - all customizable with your child's name and photo.`,
         customizationInfo,
         photoRequirements,
       };
