@@ -888,6 +888,28 @@ export const gorgiasWarehouseService = {
   },
 
   /**
+   * Get all tags
+   */
+  async getTags(limit = 50): Promise<typeof gorgiasTags.$inferSelect[]> {
+    if (!db) return [];
+    return db.select()
+      .from(gorgiasTags)
+      .orderBy(desc(gorgiasTags.ticketCount))
+      .limit(limit);
+  },
+
+  /**
+   * Get all agents/users
+   */
+  async getAgents(limit = 50): Promise<typeof gorgiasUsers.$inferSelect[]> {
+    if (!db) return [];
+    return db.select()
+      .from(gorgiasUsers)
+      .orderBy(gorgiasUsers.name)
+      .limit(limit);
+  },
+
+  /**
    * Get tickets by channel
    */
   async getTicketsByChannel(): Promise<Record<string, number>> {

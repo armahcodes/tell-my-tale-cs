@@ -243,6 +243,80 @@ export const dashboardRouter = router({
     }),
 
   /**
+   * Get Gorgias customers with filtering
+   */
+  getGorgiasCustomers: publicProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      offset: z.number().min(0).default(0),
+      search: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const customers = await dbService.gorgiasWarehouse.getRecentCustomers(input.limit);
+      
+      // Filter by search if provided
+      let filtered = customers;
+      if (input.search) {
+        const search = input.search.toLowerCase();
+        filtered = customers.filter(c => 
+          c.email?.toLowerCase().includes(search) ||
+          c.name?.toLowerCase().includes(search) ||
+          c.firstname?.toLowerCase().includes(search) ||
+          c.lastname?.toLowerCase().includes(search)
+        );
+      }
+      
+      return {
+        customers: filtered,
+        hasMore: customers.length === input.limit,
+      };
+    }),
+
+  /**
+   * Get Gorgias tags
+   */
+  getGorgiasTags: publicProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+    }))
+    .query(async ({ input }) => {
+      const tags = await dbService.gorgiasWarehouse.getTags(input.limit);
+      return { tags };
+    }),
+
+  /**
+   * Get Gorgias users/agents
+   */
+  getGorgiasAgents: publicProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+    }))
+    .query(async ({ input }) => {
+      const agents = await dbService.gorgiasWarehouse.getAgents(input.limit);
+      return { agents };
+    }),
+
+  /**
+   * Get Gorgias analytics (extended metrics)
+   */
+  getGorgiasAnalytics: publicProcedure.query(async () => {
+    const warehouseStats = await dbService.gorgiasWarehouse.getWarehouseStats();
+    
+    return {
+      totalTickets: warehouseStats.totalTickets,
+      openTickets: warehouseStats.openTickets,
+      closedTickets: warehouseStats.closedTickets,
+      totalCustomers: warehouseStats.totalCustomers,
+      totalMessages: warehouseStats.totalMessages,
+      totalAgents: warehouseStats.totalAgents,
+      totalTags: warehouseStats.totalTags,
+      ticketsToday: warehouseStats.ticketsToday,
+      avgResponseTimeSec: warehouseStats.avgResponseTimeSec,
+      channelBreakdown: warehouseStats.channelBreakdown,
+    };
+  }),
+
+  /**
    * Get analytics data for dashboard
    */
   getAnalytics: publicProcedure.query(async () => {
