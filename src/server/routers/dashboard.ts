@@ -81,7 +81,7 @@ export const dashboardRouter = router({
       offset: z.number().min(0).default(0),
     }))
     .query(async ({ input }) => {
-      const tickets = await dbService.gorgiasWarehouse.getRecentTickets(input.limit, input.offset);
+      const tickets = await dbService.gorgiasWarehouse.getRecentTickets(input.limit);
       
       // Filter by status if needed
       let filtered = tickets;

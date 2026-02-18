@@ -63,7 +63,6 @@ export const gorgiasWarehouseRouter = router({
   syncEntity: publicProcedure
     .input(z.object({
       entityType: z.enum(['users', 'tags', 'customers', 'tickets']),
-      fullSync: z.boolean().default(false),
     }))
     .mutation(async ({ input }) => {
       if (!gorgiasWarehouseSync.isAvailable()) {
@@ -73,16 +72,16 @@ export const gorgiasWarehouseRouter = router({
       let result;
       switch (input.entityType) {
         case 'users':
-          result = await gorgiasWarehouseSync.syncUsers({ fullSync: input.fullSync });
+          result = await gorgiasWarehouseSync.syncUsers();
           break;
         case 'tags':
-          result = await gorgiasWarehouseSync.syncTags({ fullSync: input.fullSync });
+          result = await gorgiasWarehouseSync.syncTags();
           break;
         case 'customers':
-          result = await gorgiasWarehouseSync.syncCustomers({ fullSync: input.fullSync });
+          result = await gorgiasWarehouseSync.syncCustomers();
           break;
         case 'tickets':
-          result = await gorgiasWarehouseSync.syncTickets({ fullSync: input.fullSync });
+          result = await gorgiasWarehouseSync.syncTickets();
           break;
       }
 

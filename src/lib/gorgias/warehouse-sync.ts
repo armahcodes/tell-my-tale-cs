@@ -787,11 +787,16 @@ class GorgiasWarehouseSync {
 
   async getSyncStatus(): Promise<{ entityType: string; lastSyncedAt: Date | null; totalSynced: number }[]> {
     if (!this.db) return [];
-    return this.db.select({
+    const results = await this.db.select({
       entityType: gorgiasSyncCursors.entityType,
       lastSyncedAt: gorgiasSyncCursors.lastSyncedAt,
       totalSynced: gorgiasSyncCursors.totalSynced,
     }).from(gorgiasSyncCursors);
+    return results.map(r => ({
+      entityType: r.entityType,
+      lastSyncedAt: r.lastSyncedAt,
+      totalSynced: r.totalSynced ?? 0,
+    }));
   }
 
   async getWarehouseStats(): Promise<{

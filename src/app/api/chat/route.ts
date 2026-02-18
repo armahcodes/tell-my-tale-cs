@@ -119,7 +119,8 @@ export async function POST(req: NextRequest) {
 
     try {
       // Stream the response using Mastra agent
-      const result = await agent.stream(formattedMessages);
+      // Cast to satisfy Mastra's MessageListInput type
+      const result = await agent.stream(formattedMessages as Parameters<typeof agent.stream>[0]);
       
       // Get the text stream from the result
       const textStream = result.textStream;
