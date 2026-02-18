@@ -16,9 +16,11 @@ import {
   RefreshCw,
   Shield,
   Trash2,
+  Ticket,
 } from 'lucide-react';
 import { Header } from '@/components/dashboard/Header';
 import { useToast } from '@/components/ui/Toast';
+import { trpc } from '@/lib/trpc';
 
 const tabs = [
   { id: 'ai', label: 'Assistant', icon: Bot },
@@ -69,6 +71,122 @@ const defaultNotificationSettings: NotificationSettings = {
 };
 
 const defaultTeamMembers: TeamMember[] = [];
+
+function IntegrationsTab() {
+  // Query Gorgias status
+  const { data: gorgiasStatus } = trpc.gorgias.status.useQuery();
+  
+  const integrations = [
+    { 
+      name: 'Shopify', 
+      description: 'E-commerce platform for orders and customers', 
+      connected: true,
+      url: 'https://admin.shopify.com',
+      icon: Shield,
+    },
+    { 
+      name: 'Gorgias', 
+      description: 'Helpdesk platform for ticket management and escalations', 
+      connected: gorgiasStatus?.configured || false,
+      url: 'https://tailoredcanvases.gorgias.com',
+      icon: Ticket,
+    },
+    { 
+      name: 'Neon Database', 
+      description: 'PostgreSQL database for conversations and analytics', 
+      connected: true,
+      url: 'https://console.neon.tech',
+      icon: Shield,
+    },
+    { 
+      name: 'OpenAI', 
+      description: 'AI language model for customer interactions', 
+      connected: true,
+      url: 'https://platform.openai.com',
+      icon: Shield,
+    },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="space-y-6 md:space-y-8"
+    >
+      <div>
+        <h3 className="text-base md:text-lg font-bold text-[#1B2838] mb-1">Integrations</h3>
+        <p className="text-xs md:text-sm text-gray-500">Connect your tools and services</p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:gap-4">
+        {integrations.map((integration) => (
+          <div 
+            key={integration.name}
+            className="p-4 md:p-5 rounded-lg md:rounded-xl border border-gray-200 hover:border-[#1B2838]/20 transition-colors"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  integration.connected ? 'bg-[#1B2838]/5' : 'bg-amber-50'
+                }`}>
+                  <integration.icon className={`w-5 h-5 ${
+                    integration.connected ? 'text-[#1B2838]' : 'text-amber-600'
+                  }`} />
+                </div>
+                <div>
+                  <p className="text-xs md:text-sm font-semibold text-[#1B2838]">{integration.name}</p>
+                  <p className="text-[10px] md:text-xs text-gray-500">{integration.description}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-2 md:px-2.5 py-0.5 md:py-1 rounded-full text-[10px] md:text-xs font-medium ${
+                  integration.connected 
+                    ? 'bg-green-100 text-green-700' 
+                    : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {integration.connected ? 'Connected' : 'Not Configured'}
+                </span>
+                <a
+                  href={integration.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4 text-gray-400" />
+                </a>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!gorgiasStatus?.configured && (
+        <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+          <div className="flex items-start gap-3">
+            <Ticket className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-amber-900">Gorgias Not Configured</p>
+              <p className="text-xs text-amber-700 mt-1">
+                Add the following environment variables to enable Gorgias integration:
+              </p>
+              <ul className="text-xs text-amber-700 mt-2 space-y-1 font-mono">
+                <li>GORGIAS_DOMAIN</li>
+                <li>GORGIAS_EMAIL</li>
+                <li>GORGIAS_API_KEY</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+        <p className="text-sm text-gray-600">
+          Need help with integrations? Contact support for assistance.
+        </p>
+      </div>
+    </motion.div>
+  );
+}
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('ai');
@@ -361,75 +479,7 @@ export default function SettingsPage() {
           )}
 
           {activeTab === 'integrations' && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-6 md:space-y-8"
-            >
-              <div>
-                <h3 className="text-base md:text-lg font-bold text-[#1B2838] mb-1">Integrations</h3>
-                <p className="text-xs md:text-sm text-gray-500">Connect your tools and services</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 md:gap-4">
-                {[
-                  { 
-                    name: 'Shopify', 
-                    description: 'E-commerce platform for orders and customers', 
-                    connected: true,
-                    url: 'https://admin.shopify.com',
-                  },
-                  { 
-                    name: 'Neon Database', 
-                    description: 'PostgreSQL database for conversations and analytics', 
-                    connected: true,
-                    url: 'https://console.neon.tech',
-                  },
-                  { 
-                    name: 'OpenAI', 
-                    description: 'AI language model for customer interactions', 
-                    connected: true,
-                    url: 'https://platform.openai.com',
-                  },
-                ].map((integration) => (
-                  <div 
-                    key={integration.name}
-                    className="p-4 md:p-5 rounded-lg md:rounded-xl border border-gray-200 hover:border-[#1B2838]/20 transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-[#1B2838]/5 flex items-center justify-center">
-                          <Shield className="w-5 h-5 text-[#1B2838]" />
-                        </div>
-                        <div>
-                          <p className="text-xs md:text-sm font-semibold text-[#1B2838]">{integration.name}</p>
-                          <p className="text-[10px] md:text-xs text-gray-500">{integration.description}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 md:px-2.5 py-0.5 md:py-1 rounded-full text-[10px] md:text-xs font-medium bg-green-100 text-green-700">
-                          Connected
-                        </span>
-                        <a
-                          href={integration.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                          <ExternalLink className="w-4 h-4 text-gray-400" />
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                <p className="text-sm text-gray-600">
-                  More integrations coming soon. Contact support if you need a specific integration.
-                </p>
-              </div>
-            </motion.div>
+            <IntegrationsTab />
           )}
 
           {activeTab === 'team' && (
@@ -502,6 +552,8 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Integrations Tab Component - Extracted for Gorgias status */}
+      
       {/* Invite Team Member Modal */}
       <AnimatePresence>
         {showInviteModal && (

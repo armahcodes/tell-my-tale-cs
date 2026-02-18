@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * Dashboard Sidebar Component
+ */
+
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -17,7 +21,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
-import { signOut } from '@/lib/auth/neon-auth';
+import { authClient } from '@/lib/auth/client';
 import { useState } from 'react';
 import { useToast } from '@/components/ui/Toast';
 
@@ -35,7 +39,7 @@ interface User {
   id?: string;
   email?: string;
   name?: string;
-  image?: string;
+  image?: string | null;
 }
 
 interface SidebarProps {
@@ -75,11 +79,11 @@ export function Sidebar({ onClose, user }: SidebarProps) {
     return 'User';
   };
 
-  // Handle sign out
+  // Handle sign out using Neon Auth
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
-      await signOut();
+      await authClient.signOut();
       showToast('success', 'Signed out successfully');
       router.push('/login');
     } catch (error) {

@@ -9,22 +9,24 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle,
-  ArrowUpRight,
   Star,
   Zap,
   BookOpen,
-  ArrowDown,
   Package,
-  DollarSign,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { Header } from '@/components/dashboard/Header';
 
 export default function DashboardPage() {
   // tRPC queries for real data
-  const { data: statsData, refetch: refetchStats } = trpc.dashboard.getStats.useQuery(
+  const { data: statsData, refetch: refetchStats, isLoading: isStatsLoading } = trpc.dashboard.getStats.useQuery(
     undefined,
-    { refetchInterval: 30000 }
+    { 
+      refetchInterval: 30000,
+      refetchOnMount: true,
+      refetchOnWindowFocus: true,
+      staleTime: 0,
+    }
   );
 
   const { data: productsData } = trpc.shopify.getProducts.useQuery({ limit: 10 });
@@ -42,11 +44,24 @@ export default function DashboardPage() {
     pendingEscalations: 0,
     highPriorityCount: 0,
     mediumPriorityCount: 0,
+    totalMessages: 0,
+    conversationsToday: 0,
+    // Gorgias warehouse data
+    gorgiasTickets: 0,
+    gorgiasOpenTickets: 0,
+    gorgiasClosedTickets: 0,
+    gorgiasCustomers: 0,
+    gorgiasMessages: 0,
+    gorgiasAgents: 0,
+    gorgiasTicketsToday: 0,
+    gorgiasAvgResponseSec: null as number | null,
+    gorgiasChannels: {} as Record<string, number>,
   };
 
   const handleRefresh = async () => {
     await refetchStats();
   };
+
 
   return (
     <>
@@ -61,10 +76,9 @@ export default function DashboardPage() {
         {[
           {
             icon: MessageSquare,
-            label: 'Conversations',
+            label: 'Total Conversations',
             value: stats.totalConversations,
-            change: '+12%',
-            positive: true,
+            subtext: stats.conversationsToday > 0 ? `+${stats.conversationsToday} today` : undefined,
           },
           {
             icon: Users,
@@ -76,14 +90,14 @@ export default function DashboardPage() {
             icon: Clock,
             label: 'Avg Response',
             value: stats.avgResponseTime,
-            change: 'Fast',
-            positive: true,
+            subtext: stats.totalMessages > 0 ? `${stats.totalMessages} messages` : undefined,
           },
           {
             icon: Star,
             label: 'CSAT Score',
             value: stats.csatScore > 0 ? stats.csatScore.toFixed(1) : '—',
             suffix: stats.csatScore > 0 ? '/5.0' : '',
+            subtext: stats.csatScore === 0 ? 'No ratings yet' : undefined,
           },
         ].map((stat, i) => (
           <motion.div
@@ -97,10 +111,9 @@ export default function DashboardPage() {
               <div className="p-2 md:p-3 rounded-lg md:rounded-xl bg-gray-50">
                 <stat.icon className="w-4 h-4 md:w-5 md:h-5 text-[#1B2838]" />
               </div>
-              {stat.change && (
-                <span className={`hidden sm:flex items-center gap-1 text-[10px] md:text-xs font-semibold ${stat.positive ? 'text-green-600' : 'text-red-500'}`}>
-                  {stat.positive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-                  {stat.change}
+              {stat.subtext && (
+                <span className="hidden sm:flex items-center gap-1 text-[10px] md:text-xs font-medium text-gray-500">
+                  {stat.subtext}
                 </span>
               )}
               {stat.live && (
@@ -180,6 +193,100 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Gorgias Data Warehouse Stats */}
+      {isStatsLoading ? (
+        <div className="bg-gradient-to-br from-gray-50 to-slate-50 rounded-xl md:rounded-2xl p-4 md:p-6 shadow-sm border border-gray-200 mb-6 md:mb-8">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gray-200 animate-pulse">
+              <MessageSquare className="w-5 h-5 text-gray-400" />
+            </div>
+            <div>
+              <h3 className="text-base md:text-lg font-bold text-[#1B2838]">Gorgias Data Warehouse</h3>
+              <p className="text-xs text-gray-500">Loading...</p>
+            </div>
+          </div>
+        </div>
+      ) : !stats.gorgiasTickets || stats.gorgiasTickets === 0 ? (
+        <div className="bg-gradient-to-br from-gray-50 to-slate-50 rounded-xl md:rounded-2xl p-4 md:p-6 shadow-sm border border-gray-200 mb-6 md:mb-8">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 rounded-lg bg-gray-200">
+              <MessageSquare className="w-5 h-5 text-gray-500" />
+            </div>
+            <div>
+              <h3 className="text-base md:text-lg font-bold text-[#1B2838]">Gorgias Data Warehouse</h3>
+              <p className="text-xs text-gray-500">No data synced yet</p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mb-3">
+            Sync your Gorgias tickets, customers, and messages to see analytics here.
+          </p>
+          <code className="block bg-gray-100 p-2 rounded text-xs text-gray-700 font-mono">
+            npx ts-node scripts/sync-warehouse.ts
+          </code>
+        </div>
+      ) : (
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl md:rounded-2xl p-4 md:p-6 shadow-sm border border-purple-100 mb-6 md:mb-8">
+          <div className="flex items-center justify-between mb-4 md:mb-5">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-purple-500/10">
+                <MessageSquare className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
+              </div>
+              <h3 className="text-base md:text-lg font-bold text-[#1B2838]">Gorgias Data Warehouse</h3>
+            </div>
+            <span className="text-xs text-purple-600 font-medium px-2 py-1 bg-purple-100 rounded-full">
+              Synced
+            </span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
+            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
+              <p className="text-xl md:text-2xl font-bold text-purple-700">{stats.gorgiasTickets.toLocaleString()}</p>
+              <p className="text-[10px] md:text-xs text-gray-600">Total Tickets</p>
+            </div>
+            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
+              <p className="text-xl md:text-2xl font-bold text-blue-600">{stats.gorgiasOpenTickets.toLocaleString()}</p>
+              <p className="text-[10px] md:text-xs text-gray-600">Open</p>
+            </div>
+            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
+              <p className="text-xl md:text-2xl font-bold text-green-600">{stats.gorgiasClosedTickets.toLocaleString()}</p>
+              <p className="text-[10px] md:text-xs text-gray-600">Closed</p>
+            </div>
+            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
+              <p className="text-xl md:text-2xl font-bold text-indigo-600">{stats.gorgiasCustomers.toLocaleString()}</p>
+              <p className="text-[10px] md:text-xs text-gray-600">Customers</p>
+            </div>
+            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
+              <p className="text-xl md:text-2xl font-bold text-amber-600">{stats.gorgiasMessages.toLocaleString()}</p>
+              <p className="text-[10px] md:text-xs text-gray-600">Messages</p>
+            </div>
+            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
+              <p className="text-xl md:text-2xl font-bold text-teal-600">
+                {stats.gorgiasAvgResponseSec 
+                  ? stats.gorgiasAvgResponseSec < 60 
+                    ? `${Math.round(stats.gorgiasAvgResponseSec)}s`
+                    : stats.gorgiasAvgResponseSec < 3600
+                      ? `${Math.round(stats.gorgiasAvgResponseSec / 60)}m`
+                      : `${Math.round(stats.gorgiasAvgResponseSec / 3600)}h`
+                  : '—'}
+              </p>
+              <p className="text-[10px] md:text-xs text-gray-600">Avg Response</p>
+            </div>
+          </div>
+          {Object.keys(stats.gorgiasChannels).length > 0 && (
+            <div className="mt-4 pt-4 border-t border-purple-100">
+              <p className="text-xs font-medium text-gray-600 mb-2">Tickets by Channel</p>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(stats.gorgiasChannels).map(([channel, ticketCount]) => (
+                  <span key={channel} className="inline-flex items-center gap-1 px-2 py-1 bg-white/70 rounded-lg text-xs text-gray-700">
+                    <span className="font-medium capitalize">{channel}:</span>
+                    <span className="text-purple-600">{ticketCount}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recent Orders & Customers - Two Column */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">

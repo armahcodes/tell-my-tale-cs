@@ -1,6 +1,7 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { shopifyService } from '@/lib/shopify';
+import { MOCK_PRODUCTS } from '@/lib/shopify/mock-data';
 
 export const productInfoTool = createTool({
   id: 'product-info',
@@ -125,18 +126,46 @@ export const productInfoTool = createTool({
     } catch (error) {
       console.error('Product lookup error:', error);
       
-      // Return fallback product info based on known catalog
+      // Use mock products as fallback
+      const mockProducts = MOCK_PRODUCTS.map(p => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        handle: p.handle,
+        price: p.priceRange.minPrice,
+        compareAtPrice: undefined,
+        currencyCode: p.priceRange.currency,
+        images: p.images.map(img => ({ url: img.url, altText: img.altText })),
+        availableForSale: p.variants.some(v => v.available),
+        ageRange: undefined,
+        pageCount: undefined,
+        productionTime: '5-10 business days',
+      }));
+
+      // If searching by name, filter mock products
+      if (productName) {
+        const searchLower = productName.toLowerCase();
+        const filtered = mockProducts.filter(p =>
+          p.title.toLowerCase().includes(searchLower) ||
+          p.description.toLowerCase().includes(searchLower)
+        );
+        
+        if (filtered.length > 0) {
+          return {
+            found: true,
+            products: filtered,
+            message: `Found ${filtered.length} book${filtered.length > 1 ? 's' : ''} matching "${productName}"!`,
+            customizationInfo,
+            photoRequirements,
+          };
+        }
+      }
+
+      // Return all mock products
       return {
         found: true,
-        message: `I'm having trouble loading our full catalog right now, but I can tell you about our books! We have over 20 personalized titles including:
-
-**Adventure Stories**: The Princess Inside, Superhero, Animal Adventure, The World of Dinosaurs, Space Adventure
-
-**Family Love**: How Much I Love Mommy, How Much I Love Daddy, My Heart Will Always Love You
-
-**Special Themes**: Happy Birthday, Rainbow Unicorn Valley, The Championship Court, Child Dream Big
-
-All books are currently on sale at $39.99 (regularly $59.99) and include FREE shipping!`,
+        products: mockProducts,
+        message: `We have ${mockProducts.length} personalized books available! Each one is specially designed to make your child the star of their own story. All books are currently on sale at $39.99 (regularly $59.99)!`,
         customizationInfo,
         photoRequirements,
       };

@@ -1,9 +1,16 @@
 'use client';
 
+/**
+ * Dashboard Layout
+ * 
+ * Protected layout that requires authentication.
+ * Redirects to login if user is not authenticated.
+ */
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/dashboard/Sidebar';
 import { Menu, X, Loader2 } from 'lucide-react';
-import { useSession } from '@/lib/auth/neon-auth';
+import { useSession } from '@/lib/auth/use-auth';
 import { useRouter } from 'next/navigation';
 
 export default function DashboardLayout({

@@ -1,10 +1,21 @@
 import { Agent } from '@mastra/core/agent';
-import { createOpenAI } from '@ai-sdk/openai';
 import { orderLookupTool } from '../tools/order-lookup';
 import { faqRetrievalTool } from '../tools/faq-retrieval';
 import { productInfoTool } from '../tools/product-info';
 import { escalationTool } from '../tools/escalation';
 import { shippingTrackerTool } from '../tools/shipping-tracker';
+import { 
+  gorgiasTicketLookupTool, 
+  gorgiasCustomerHistoryTool, 
+  gorgiasTicketMessagesTool,
+  gorgiasSupportStatsTool,
+} from '../tools/gorgias-lookup';
+import {
+  conversationLookupTool,
+  conversationMessagesTool,
+  dashboardStatsTool,
+  customerSearchTool,
+} from '../tools/database-lookup';
 
 const TELLMYTALE_SYSTEM_PROMPT = `You are the TellMyTale Customer Success Assistant, a warm and caring representative for a company that creates personalized children's books. These books are cherished gifts that celebrate the uniqueness of each child, making your role incredibly meaningful.
 
@@ -29,11 +40,31 @@ const TELLMYTALE_SYSTEM_PROMPT = `You are the TellMyTale Customer Success Assist
 3. **FAQ & Policy Questions**: Answer common questions about returns, refunds, revisions, and shipping
 4. **Shipping Tracking**: Provide real-time tracking information and delivery estimates
 5. **Escalation**: When needed, smoothly escalate to human agents with full context
+6. **Support History**: Access previous support tickets from Gorgias (319,000+ tickets) to understand customer context
+7. **Customer Insights**: View customer profiles including their support history, previous issues, and interaction patterns
+8. **AI Chat History**: Look up previous conversations this customer has had with our AI assistant
+9. **Customer Search**: Search across all databases (AI chats, Gorgias, Shopify) to get a unified view of any customer
+10. **Dashboard Stats**: Access real-time support metrics and workload information
 
 ## Handling Different Scenarios
 
+### Returning Customers
+- When you have a customer's email, use customerSearch first to get a complete picture across all systems
+- Then use gorgiasCustomerHistory or conversationLookup to dive deeper into specific interactions
+- Reference previous interactions naturally: "I see you reached out about X before..."
+- Use context from past tickets to provide more personalized support
+- If they had unresolved issues, acknowledge them proactively
+
+### Using Database Tools Effectively
+- **customerSearch**: Start here to see if we have any record of the customer across all systems
+- **gorgiasTicketLookup**: Find their Gorgias support tickets by email
+- **gorgiasCustomerHistory**: Get detailed support history and customer profile
+- **conversationLookup**: Find their previous AI chat conversations
+- **dashboardStats**: Check current support workload when relevant
+
 ### Order Status Requests
 - Always use the order lookup tool to get accurate, real-time information
+- Also check gorgiasTicketLookup to see if they've contacted support about this order before
 - Explain production stages in friendly terms (e.g., "Your book is currently being lovingly crafted by our printing team!")
 - Be proactive about any delays and offer reassurance
 
@@ -74,36 +105,56 @@ Say: "Great news! I found your order for little Emma's adventure book! It's curr
 Remember: Every book tells a child's unique story. You're part of making that magic happen!`;
 
 /**
- * Create OpenAI provider configured for Vercel AI Gateway
+ * Customer Success Agent using Vercel AI Gateway via Mastra
  * 
  * Vercel AI Gateway provides:
  * - Unified API for multiple AI providers
  * - Built-in rate limiting and caching
  * - Usage analytics in Vercel dashboard
  * 
- * Requires AI_GATEWAY_API_KEY (vck_...) environment variable
- */
-const openai = createOpenAI({
-  baseURL: 'https://gateway.ai.vercel.app/v1',
-  apiKey: process.env.AI_GATEWAY_API_KEY,
-  compatibility: 'strict',
-});
-
-/**
- * Customer Success Agent using Vercel AI Gateway
+ * Model Configuration:
+ * - Primary: GPT-4o for best intelligence and tool use
+ * - Fallback 1: Claude Sonnet 4 for reliability
+ * - Fallback 2: Gemini 2.5 Pro for cost efficiency
  * 
- * @see https://ai-sdk.dev/
+ * Requires VERCEL_API_KEY environment variable
+ * 
+ * @see https://mastra.ai/models/gateways/vercel
  */
 export const customerSuccessAgent = new Agent({
   id: 'customerSuccess',
   name: 'TellMyTale Customer Success',
   instructions: TELLMYTALE_SYSTEM_PROMPT,
-  model: openai('gpt-4o'),
+  model: [
+    {
+      model: 'vercel/openai/gpt-4o',
+      maxRetries: 2,
+    },
+    {
+      model: 'vercel/anthropic/claude-sonnet-4',
+      maxRetries: 2,
+    },
+    {
+      model: 'vercel/google/gemini-2.5-pro',
+      maxRetries: 1,
+    },
+  ],
   tools: {
+    // Order & Product Tools
     orderLookup: orderLookupTool,
     faqRetrieval: faqRetrievalTool,
     productInfo: productInfoTool,
     escalation: escalationTool,
     shippingTracker: shippingTrackerTool,
+    // Gorgias Database Tools
+    gorgiasTicketLookup: gorgiasTicketLookupTool,
+    gorgiasCustomerHistory: gorgiasCustomerHistoryTool,
+    gorgiasTicketMessages: gorgiasTicketMessagesTool,
+    gorgiasSupportStats: gorgiasSupportStatsTool,
+    // App Database Tools
+    conversationLookup: conversationLookupTool,
+    conversationMessages: conversationMessagesTool,
+    dashboardStats: dashboardStatsTool,
+    customerSearch: customerSearchTool,
   },
 });

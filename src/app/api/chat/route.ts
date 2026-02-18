@@ -2,6 +2,8 @@ import { mastra } from '@/lib/mastra';
 import { NextRequest } from 'next/server';
 import { CoreMessage } from 'ai';
 import { dbService } from '@/lib/db/service';
+import { auth } from '@/lib/auth/auth';
+import { headers } from 'next/headers';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -21,8 +23,23 @@ interface ChatRequestBody {
 
 export async function POST(req: NextRequest) {
   try {
+    // Get authenticated session (optional - allows both authenticated and guest users)
+    let session = null;
+    try {
+      session = await auth.api.getSession({
+        headers: await headers(),
+      });
+    } catch {
+      // Session check failed, continue as guest
+    }
+
     const body: ChatRequestBody = await req.json();
-    const { messages, conversationId, customerEmail, customerName, orderNumber } = body;
+    const { messages, conversationId, orderNumber } = body;
+    
+    // Use authenticated user info if available, otherwise use provided info
+    const customerEmail = session?.user?.email || body.customerEmail;
+    const customerName = session?.user?.name || body.customerName;
+    const isAuthenticated = !!session?.user;
 
     if (!messages || !Array.isArray(messages)) {
       return new Response(
@@ -32,12 +49,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if Vercel AI Gateway API key is configured
-    const apiKey = process.env.AI_GATEWAY_API_KEY;
+    const apiKey = process.env.VERCEL_API_KEY || process.env.AI_GATEWAY_API_KEY;
     if (!apiKey) {
       return new Response(
         JSON.stringify({ 
           error: 'AI Gateway API key not configured',
-          details: 'Set AI_GATEWAY_API_KEY in environment variables (Vercel AI Gateway key starting with vck_)'
+          details: 'Set VERCEL_API_KEY in environment variables'
         }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
@@ -61,7 +78,7 @@ export async function POST(req: NextRequest) {
         customerEmail,
         customerName,
         orderNumber,
-        channel: 'web_chat',
+        channel: isAuthenticated ? 'authenticated_chat' : 'web_chat',
         status: 'active',
       });
       
@@ -82,11 +99,24 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Format messages for the agent
-    const formattedMessages: CoreMessage[] = messages.map((msg: ChatMessage) => ({
-      role: msg.role as 'user' | 'assistant',
-      content: msg.content,
-    }));
+    // Build context for authenticated users
+    const userContext = isAuthenticated && customerEmail
+      ? `[System Context: The customer "${customerName || 'User'}" is logged in with email ${customerEmail}. They are an authenticated user, so you can look up their orders directly using their email.]`
+      : customerEmail
+        ? `[System Context: Customer email: ${customerEmail}${customerName ? `, Name: ${customerName}` : ''}]`
+        : '';
+
+    // Format messages for the agent with user context
+    const formattedMessages: CoreMessage[] = [
+      ...(userContext ? [{
+        role: 'system' as const,
+        content: userContext,
+      }] : []),
+      ...messages.map((msg: ChatMessage) => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      })),
+    ];
 
     try {
       // Stream the response using Mastra agent

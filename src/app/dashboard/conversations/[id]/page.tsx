@@ -16,8 +16,11 @@ import {
   Sparkles,
   Tag,
   FileText,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 import { Header } from '@/components/dashboard/Header';
+import { GorgiasTicketCard } from '@/components/dashboard/GorgiasTicketCard';
 import { trpc } from '@/lib/trpc';
 import { formatDistanceToNow, format } from 'date-fns';
 import Link from 'next/link';
@@ -291,6 +294,15 @@ export default function ConversationDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Gorgias Ticket (if linked) */}
+          {conversation.gorgiasTicketId && (
+            <GorgiasTicketCard
+              ticketId={conversation.gorgiasTicketId}
+              ticketUrl={`https://${process.env.NEXT_PUBLIC_GORGIAS_DOMAIN || 'tailoredcanvases'}.gorgias.com/app/ticket/${conversation.gorgiasTicketId}`}
+              showRefresh={true}
+            />
+          )}
 
           {/* Status Actions */}
           <div className="bg-white rounded-2xl border border-gray-200 p-5">

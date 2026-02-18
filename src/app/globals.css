@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@neondatabase/auth/ui/tailwind";
 
 :root {
   /* TellMyTale Brand Colors - Clean, Professional, White + Navy */
@@ -32,6 +33,28 @@
   
   --background: var(--tmt-white);
   --foreground: var(--tmt-navy);
+  
+  /* Neon Auth UI Theme - TellMyTale Brand */
+  --primary: var(--tmt-navy);
+  --primary-foreground: var(--tmt-white);
+  --secondary: var(--tmt-gray-100);
+  --secondary-foreground: var(--tmt-navy);
+  --muted: var(--tmt-gray-100);
+  --muted-foreground: var(--tmt-gray-500);
+  --accent: var(--tmt-blue-accent);
+  --accent-foreground: var(--tmt-white);
+  --destructive: var(--tmt-danger);
+  --destructive-foreground: var(--tmt-white);
+  --border: var(--tmt-gray-200);
+  --input: var(--tmt-gray-200);
+  --ring: var(--tmt-navy);
+  --card: var(--tmt-white);
+  --card-foreground: var(--tmt-navy);
+  --popover: var(--tmt-white);
+  --popover-foreground: var(--tmt-navy);
+  
+  /* Override Neon radius for softer look */
+  --neon-radius: 0.75rem;
 }
 
 @theme inline {

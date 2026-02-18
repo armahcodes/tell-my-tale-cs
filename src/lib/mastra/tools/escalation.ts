@@ -1,5 +1,7 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
+import { gorgiasService, isGorgiasConfigured } from '@/lib/gorgias';
+import { dbService } from '@/lib/db/service';
 
 export const escalationTool = createTool({
   id: 'escalation',
@@ -19,23 +21,42 @@ export const escalationTool = createTool({
     reasonDetails: z.string().describe('Detailed explanation of why escalation is needed'),
     customerSummary: z.string().describe('Brief summary of the customer\'s issue'),
     attemptedSolutions: z.array(z.string()).optional().describe('List of solutions already attempted'),
+    customerEmail: z.string().email().describe('Customer email address for the ticket'),
+    customerName: z.string().optional().describe('Customer name if known'),
     orderNumber: z.string().optional().describe('Related order number if applicable'),
+    orderId: z.string().optional().describe('Related Shopify order ID if applicable'),
+    conversationId: z.string().optional().describe('ID of the conversation being escalated'),
     priority: z.enum(['low', 'medium', 'high', 'urgent']).describe('Recommended priority level'),
     sentimentScore: z.number().min(-1).max(1).optional().describe('Customer sentiment score from -1 (very negative) to 1 (very positive)'),
+    conversationHistory: z.array(z.object({
+      role: z.enum(['user', 'assistant']),
+      content: z.string(),
+    })).optional().describe('Previous messages in the conversation'),
   }),
   outputSchema: z.object({
     escalationId: z.string(),
+    gorgiasTicketId: z.number().optional(),
+    gorgiasTicketUrl: z.string().optional(),
     status: z.enum(['created', 'queued', 'assigned']),
     estimatedWaitTime: z.string(),
     message: z.string(),
     nextSteps: z.array(z.string()),
   }),
-  // v1 signature: (inputData, context) instead of ({ context })
   execute: async (inputData) => {
-    const { reason, reasonDetails, customerSummary, attemptedSolutions, orderNumber, priority, sentimentScore } = inputData;
-    
-    // Generate escalation ticket ID
-    const escalationId = `ESC-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    const { 
+      reason, 
+      reasonDetails, 
+      customerSummary, 
+      attemptedSolutions, 
+      customerEmail,
+      customerName,
+      orderNumber, 
+      orderId,
+      conversationId,
+      priority, 
+      sentimentScore,
+      conversationHistory,
+    } = inputData;
     
     // Determine estimated wait time based on priority
     const waitTimes: Record<string, string> = {
@@ -45,24 +66,86 @@ export const escalationTool = createTool({
       low: '20-30 minutes',
     };
 
-    // In a real implementation, this would:
-    // 1. Create a ticket in the helpdesk/CRM system
-    // 2. Assign to available agent based on skills and workload
-    // 3. Send notification to agent
-    // 4. Log full conversation history
+    // Generate local escalation ID
+    const localEscalationId = `ESC-${Date.now().toString(36).toUpperCase()}`;
     
+    let gorgiasTicketId: number | undefined;
+    let gorgiasTicketUrl: string | undefined;
+
+    // Try to create Gorgias ticket if configured
+    if (isGorgiasConfigured()) {
+      try {
+        console.log('[Escalation] Creating Gorgias ticket...');
+        
+        const gorgiasTicket = await gorgiasService.createEscalationTicket({
+          customerEmail,
+          customerName,
+          reason: formatReasonForDisplay(reason),
+          reasonDetails,
+          customerSummary,
+          attemptedSolutions,
+          priority,
+          conversationId,
+          orderNumber,
+          orderId,
+          previousMessages: conversationHistory,
+        });
+
+        gorgiasTicketId = gorgiasTicket.id;
+        gorgiasTicketUrl = gorgiasService.getTicketUrl(gorgiasTicket.id);
+
+        console.log('[Escalation] Gorgias ticket created:', {
+          ticketId: gorgiasTicketId,
+          url: gorgiasTicketUrl,
+        });
+      } catch (error) {
+        console.error('[Escalation] Failed to create Gorgias ticket:', error);
+        // Continue without Gorgias ticket - fallback to local only
+      }
+    } else {
+      console.log('[Escalation] Gorgias not configured, creating local ticket only');
+    }
+
+    // Create local escalation record in database
+    try {
+      const escalationRecord = await dbService.escalations.create({
+        conversationId: conversationId || undefined,
+        status: 'pending',
+        priority,
+        reason: formatReasonForDisplay(reason),
+        reasonDetails,
+        customerSummary,
+        attemptedSolutions,
+        customerEmail,
+        customerName,
+        orderNumber,
+        sentimentScore,
+        gorgiasTicketId,
+        gorgiasTicketUrl,
+        gorgiasStatus: gorgiasTicketId ? 'open' : undefined,
+        lastSyncedAt: gorgiasTicketId ? new Date() : undefined,
+      });
+
+      if (escalationRecord) {
+        console.log('[Escalation] Local record created:', escalationRecord.id);
+      }
+    } catch (error) {
+      console.error('[Escalation] Failed to create local record:', error);
+      // Continue - the Gorgias ticket was already created
+    }
+
+    // Log the escalation
     console.log('[Escalation] Ticket created:', {
-      escalationId,
+      localId: localEscalationId,
+      gorgiasTicketId,
       reason,
-      reasonDetails,
-      customerSummary,
-      attemptedSolutions,
-      orderNumber,
       priority,
-      sentimentScore,
+      customerEmail,
+      orderNumber,
       timestamp: new Date().toISOString(),
     });
 
+    // Build next steps
     const nextSteps = [
       'Your request has been flagged for priority handling',
       'A customer success specialist will review your case',
@@ -73,6 +156,7 @@ export const escalationTool = createTool({
       nextSteps.unshift('A senior team member has been notified');
     }
 
+    // Build response message
     let message = '';
     
     switch (reason) {
@@ -92,8 +176,15 @@ export const escalationTool = createTool({
         message = 'I\'ve escalated your request to our customer success team who will be able to assist you further.';
     }
 
+    // Add ticket reference to message if we have a Gorgias ticket
+    if (gorgiasTicketId) {
+      message += ` Your ticket number is #${gorgiasTicketId}.`;
+    }
+
     return {
-      escalationId,
+      escalationId: localEscalationId,
+      gorgiasTicketId,
+      gorgiasTicketUrl,
       status: (priority === 'urgent' ? 'assigned' : 'queued') as 'created' | 'queued' | 'assigned',
       estimatedWaitTime: waitTimes[priority],
       message,
@@ -101,3 +192,21 @@ export const escalationTool = createTool({
     };
   },
 });
+
+/**
+ * Format the reason enum for display
+ */
+function formatReasonForDisplay(reason: string): string {
+  const reasonMap: Record<string, string> = {
+    customer_requested: 'Customer Requested Human',
+    high_frustration: 'High Customer Frustration',
+    outside_capabilities: 'Outside AI Capabilities',
+    failed_resolution_attempts: 'Multiple Resolution Attempts Failed',
+    sensitive_situation: 'Sensitive Situation',
+    refund_request: 'Refund Request',
+    legal_media_inquiry: 'Legal/Media Inquiry',
+    quality_complaint: 'Quality Complaint',
+    other: 'Other',
+  };
+  return reasonMap[reason] || reason;
+}

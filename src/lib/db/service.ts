@@ -12,6 +12,12 @@ import {
   notes,
   dailyStats,
   analyticsSnapshots,
+  gorgiasWebhookEvents,
+  gorgiasTickets,
+  gorgiasCustomers,
+  gorgiasMessages,
+  gorgiasUsers,
+  gorgiasTags,
   type NewConversation,
   type NewMessage,
   type NewEscalation,
@@ -20,6 +26,10 @@ import {
   type Message,
   type Escalation,
   type Note,
+  type NewGorgiasWebhookEvent,
+  type GorgiasWebhookEvent,
+  type GorgiasTicketRecord,
+  type GorgiasCustomerRecord,
 } from './schema';
 
 // ============================================
@@ -313,6 +323,63 @@ export const escalationsService = {
       .returning();
     return result || null;
   },
+
+  /**
+   * Update Gorgias ticket info on escalation
+   */
+  async updateGorgiasInfo(id: string, data: {
+    gorgiasTicketId: number;
+    gorgiasTicketUrl: string;
+    gorgiasStatus?: string;
+  }): Promise<Escalation | null> {
+    if (!db) return null;
+    const [result] = await db.update(escalations)
+      .set({ 
+        ...data,
+        lastSyncedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(escalations.id, id))
+      .returning();
+    return result || null;
+  },
+
+  /**
+   * Get escalation by Gorgias ticket ID
+   */
+  async getByGorgiasTicketId(gorgiasTicketId: number): Promise<Escalation | null> {
+    if (!db) return null;
+    const [result] = await db.select()
+      .from(escalations)
+      .where(eq(escalations.gorgiasTicketId, gorgiasTicketId));
+    return result || null;
+  },
+
+  /**
+   * Update Gorgias status
+   */
+  async updateGorgiasStatus(gorgiasTicketId: number, gorgiasStatus: string): Promise<Escalation | null> {
+    if (!db) return null;
+    
+    // Map Gorgias status to our status
+    let localStatus = 'pending';
+    if (gorgiasStatus === 'closed') {
+      localStatus = 'resolved';
+    } else if (gorgiasStatus === 'open') {
+      localStatus = 'in_progress';
+    }
+    
+    const [result] = await db.update(escalations)
+      .set({ 
+        gorgiasStatus,
+        status: localStatus,
+        lastSyncedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(escalations.gorgiasTicketId, gorgiasTicketId))
+      .returning();
+    return result || null;
+  },
 };
 
 // ============================================
@@ -348,7 +415,182 @@ export const notesService = {
 // ============================================
 export const statsService = {
   /**
-   * Get or create today's stats
+   * Get conversations created today
+   */
+  async getConversationsToday(): Promise<number> {
+    if (!db) return 0;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const [result] = await db.select({ count: count() })
+      .from(conversations)
+      .where(and(
+        gte(conversations.createdAt, today),
+        lte(conversations.createdAt, tomorrow)
+      ));
+    
+    return result?.count || 0;
+  },
+
+  /**
+   * Get conversations resolved today
+   */
+  async getResolvedToday(): Promise<number> {
+    if (!db) return 0;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const [result] = await db.select({ count: count() })
+      .from(conversations)
+      .where(and(
+        eq(conversations.status, 'resolved'),
+        gte(conversations.resolvedAt, today),
+        lte(conversations.resolvedAt, tomorrow)
+      ));
+    
+    return result?.count || 0;
+  },
+
+  /**
+   * Get average response time from conversations with response times
+   */
+  async getAvgResponseTime(): Promise<number | null> {
+    if (!db) return null;
+    
+    const result = await db.select({
+      avgTime: sql<number>`AVG(${conversations.responseTimeMs})`.as('avgTime'),
+    })
+    .from(conversations)
+    .where(sql`${conversations.responseTimeMs} IS NOT NULL`);
+    
+    return result[0]?.avgTime || null;
+  },
+
+  /**
+   * Get total message count across all conversations
+   */
+  async getTotalMessages(): Promise<number> {
+    if (!db) return 0;
+    
+    const [result] = await db.select({ count: count() })
+      .from(messages);
+    
+    return result?.count || 0;
+  },
+
+  /**
+   * Get CSAT score from notes (ratings stored as notes)
+   */
+  async getAvgCsatScore(): Promise<number | null> {
+    if (!db) return null;
+    
+    const csatNotes = await db.select()
+      .from(notes)
+      .where(sql`${notes.content} LIKE 'CSAT Rating:%'`)
+      .limit(100);
+    
+    if (csatNotes.length === 0) return null;
+    
+    let totalScore = 0;
+    let validRatings = 0;
+    
+    for (const note of csatNotes) {
+      const match = note.content.match(/CSAT Rating: (\d)/);
+      if (match) {
+        totalScore += parseInt(match[1], 10);
+        validRatings++;
+      }
+    }
+    
+    return validRatings > 0 ? totalScore / validRatings : null;
+  },
+
+  /**
+   * Calculate and return dashboard stats from actual database data
+   */
+  async getDashboardStats() {
+    if (!db) {
+      return {
+        totalConversations: 0,
+        activeNow: 0,
+        resolvedToday: 0,
+        avgResponseTime: '—',
+        aiResolutionRate: 0,
+        csatScore: 0,
+        escalationRate: 0,
+        pendingEscalations: 0,
+        highPriorityCount: 0,
+        mediumPriorityCount: 0,
+        totalMessages: 0,
+        conversationsToday: 0,
+      };
+    }
+
+    // Get all status counts directly from conversations table
+    const statusCounts = await conversationsService.getStatusCounts();
+    
+    // Get escalation priority counts
+    const priorityCounts = await escalationsService.getPriorityCounts();
+    
+    // Calculate totals from actual data
+    const total = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+    const resolved = statusCounts['resolved'] || 0;
+    const escalated = statusCounts['escalated'] || 0;
+    const active = statusCounts['active'] || 0;
+    
+    // Get today's specific stats
+    const resolvedToday = await this.getResolvedToday();
+    const conversationsToday = await this.getConversationsToday();
+    
+    // Get average response time
+    const avgResponseTimeMs = await this.getAvgResponseTime();
+    
+    // Get total messages
+    const totalMessages = await this.getTotalMessages();
+    
+    // Get CSAT score
+    const csatScore = await this.getAvgCsatScore();
+    
+    // Calculate rates based on actual data
+    const aiResolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
+    const escalationRate = total > 0 ? Math.round((escalated / total) * 100) : 0;
+    
+    // Format response time
+    let avgResponseTime = '—';
+    if (avgResponseTimeMs !== null) {
+      if (avgResponseTimeMs < 1000) {
+        avgResponseTime = `${Math.round(avgResponseTimeMs)}ms`;
+      } else if (avgResponseTimeMs < 60000) {
+        avgResponseTime = `${Math.round(avgResponseTimeMs / 1000)}s`;
+      } else {
+        avgResponseTime = `${Math.round(avgResponseTimeMs / 60000)}m`;
+      }
+    }
+    
+    return {
+      totalConversations: total,
+      activeNow: active,
+      resolvedToday,
+      avgResponseTime,
+      aiResolutionRate,
+      csatScore: csatScore || 0,
+      escalationRate,
+      pendingEscalations: priorityCounts.high + priorityCounts.medium + priorityCounts.low,
+      highPriorityCount: priorityCounts.high,
+      mediumPriorityCount: priorityCounts.medium,
+      totalMessages,
+      conversationsToday,
+    };
+  },
+
+  /**
+   * Get or create today's daily stats record
    */
   async getTodayStats() {
     if (!db) return null;
@@ -362,7 +604,6 @@ export const statsService = {
     
     if (existing) return existing;
     
-    // Create today's stats if not exists
     const [created] = await db.insert(dailyStats)
       .values({ date: today })
       .returning();
@@ -402,61 +643,6 @@ export const statsService = {
   },
 
   /**
-   * Calculate and return dashboard stats
-   */
-  async getDashboardStats() {
-    if (!db) {
-      // Return mock data when database is not available
-      return {
-        totalConversations: 0,
-        activeNow: 0,
-        resolvedToday: 0,
-        avgResponseTime: '—',
-        aiResolutionRate: 0,
-        csatScore: 0,
-        escalationRate: 0,
-        pendingEscalations: 0,
-        highPriorityCount: 0,
-        mediumPriorityCount: 0,
-      };
-    }
-
-    // Get conversation counts
-    const statusCounts = await conversationsService.getStatusCounts();
-    
-    // Get escalation priority counts
-    const priorityCounts = await escalationsService.getPriorityCounts();
-    
-    // Get today's stats
-    const todayStats = await this.getTodayStats();
-    
-    // Calculate totals
-    const total = Object.values(statusCounts).reduce((a, b) => a + b, 0);
-    const resolved = statusCounts['resolved'] || 0;
-    const escalated = statusCounts['escalated'] || 0;
-    const active = statusCounts['active'] || 0;
-    
-    // Calculate rates
-    const aiResolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
-    const escalationRate = total > 0 ? Math.round((escalated / total) * 100) : 0;
-    
-    return {
-      totalConversations: total,
-      activeNow: active,
-      resolvedToday: todayStats?.resolvedConversations || resolved,
-      avgResponseTime: todayStats?.avgResponseTimeSec 
-        ? `${Math.round(todayStats.avgResponseTimeSec)}s` 
-        : '< 30s',
-      aiResolutionRate,
-      csatScore: todayStats?.csatScore || 4.8,
-      escalationRate,
-      pendingEscalations: priorityCounts.high + priorityCounts.medium + priorityCounts.low,
-      highPriorityCount: priorityCounts.high,
-      mediumPriorityCount: priorityCounts.medium,
-    };
-  },
-
-  /**
    * Increment conversation count for today
    */
   async incrementConversationCount() {
@@ -464,6 +650,9 @@ export const statsService = {
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    
+    // Ensure today's stats exist
+    await this.getTodayStats();
     
     await db.update(dailyStats)
       .set({ 
@@ -482,12 +671,315 @@ export const statsService = {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
+    // Ensure today's stats exist
+    await this.getTodayStats();
+    
     await db.update(dailyStats)
       .set({ 
         resolvedConversations: sql`${dailyStats.resolvedConversations} + 1`,
         updatedAt: new Date()
       })
       .where(eq(dailyStats.date, today));
+  },
+};
+
+// ============================================
+// Gorgias Webhook Events Service
+// ============================================
+export const gorgiasWebhookEventsService = {
+  /**
+   * Create a webhook event record
+   */
+  async create(data: NewGorgiasWebhookEvent): Promise<GorgiasWebhookEvent | null> {
+    if (!db) return null;
+    const [result] = await db.insert(gorgiasWebhookEvents).values(data).returning();
+    return result;
+  },
+
+  /**
+   * Mark event as processed
+   */
+  async markProcessed(id: string, error?: string): Promise<void> {
+    if (!db) return;
+    await db.update(gorgiasWebhookEvents)
+      .set({ 
+        processedAt: new Date(),
+        processingError: error
+      })
+      .where(eq(gorgiasWebhookEvents.id, id));
+  },
+
+  /**
+   * Get unprocessed events
+   */
+  async getUnprocessed(limit = 100): Promise<GorgiasWebhookEvent[]> {
+    if (!db) return [];
+    return db.select()
+      .from(gorgiasWebhookEvents)
+      .where(sql`${gorgiasWebhookEvents.processedAt} IS NULL`)
+      .orderBy(gorgiasWebhookEvents.createdAt)
+      .limit(limit);
+  },
+
+  /**
+   * Get recent events
+   */
+  async getRecent(limit = 50): Promise<GorgiasWebhookEvent[]> {
+    if (!db) return [];
+    return db.select()
+      .from(gorgiasWebhookEvents)
+      .orderBy(desc(gorgiasWebhookEvents.createdAt))
+      .limit(limit);
+  },
+
+  /**
+   * Check if event already exists (for idempotency)
+   */
+  async exists(eventType: string, resourceId: number): Promise<boolean> {
+    if (!db) return false;
+    const [result] = await db.select({ count: count() })
+      .from(gorgiasWebhookEvents)
+      .where(and(
+        eq(gorgiasWebhookEvents.eventType, eventType),
+        eq(gorgiasWebhookEvents.resourceId, resourceId)
+      ));
+    return (result?.count || 0) > 0;
+  },
+};
+
+// ============================================
+// Gorgias Data Warehouse Service
+// ============================================
+export const gorgiasWarehouseService = {
+  /**
+   * Get total ticket count from warehouse
+   */
+  async getTicketCount(): Promise<number> {
+    if (!db) return 0;
+    const [result] = await db.select({ count: count() }).from(gorgiasTickets);
+    return result?.count || 0;
+  },
+
+  /**
+   * Get ticket counts by status
+   */
+  async getTicketStatusCounts(): Promise<{ open: number; closed: number }> {
+    if (!db) return { open: 0, closed: 0 };
+    
+    const results = await db.select({
+      status: gorgiasTickets.status,
+      count: count(),
+    })
+    .from(gorgiasTickets)
+    .groupBy(gorgiasTickets.status);
+    
+    return {
+      open: results.find(r => r.status === 'open')?.count || 0,
+      closed: results.find(r => r.status === 'closed')?.count || 0,
+    };
+  },
+
+  /**
+   * Get recent tickets
+   */
+  async getRecentTickets(limit = 20): Promise<GorgiasTicketRecord[]> {
+    if (!db) return [];
+    return db.select()
+      .from(gorgiasTickets)
+      .orderBy(desc(gorgiasTickets.gorgiasCreatedAt))
+      .limit(limit);
+  },
+
+  /**
+   * Get tickets by customer email
+   */
+  async getTicketsByEmail(email: string, limit = 10): Promise<GorgiasTicketRecord[]> {
+    if (!db) return [];
+    return db.select()
+      .from(gorgiasTickets)
+      .where(eq(gorgiasTickets.customerEmail, email))
+      .orderBy(desc(gorgiasTickets.gorgiasCreatedAt))
+      .limit(limit);
+  },
+
+  /**
+   * Get ticket by ID
+   */
+  async getTicketById(id: number): Promise<GorgiasTicketRecord | null> {
+    if (!db) return null;
+    const [result] = await db.select().from(gorgiasTickets).where(eq(gorgiasTickets.id, id));
+    return result || null;
+  },
+
+  /**
+   * Get total customer count
+   */
+  async getCustomerCount(): Promise<number> {
+    if (!db) return 0;
+    const [result] = await db.select({ count: count() }).from(gorgiasCustomers);
+    return result?.count || 0;
+  },
+
+  /**
+   * Get recent customers
+   */
+  async getRecentCustomers(limit = 20): Promise<GorgiasCustomerRecord[]> {
+    if (!db) return [];
+    return db.select()
+      .from(gorgiasCustomers)
+      .orderBy(desc(gorgiasCustomers.gorgiasCreatedAt))
+      .limit(limit);
+  },
+
+  /**
+   * Get customer by ID
+   */
+  async getCustomerById(id: number): Promise<GorgiasCustomerRecord | null> {
+    if (!db) return null;
+    const [result] = await db.select().from(gorgiasCustomers).where(eq(gorgiasCustomers.id, id));
+    return result || null;
+  },
+
+  /**
+   * Get customer by email
+   */
+  async getCustomerByEmail(email: string): Promise<GorgiasCustomerRecord | null> {
+    if (!db) return null;
+    const [result] = await db.select().from(gorgiasCustomers).where(eq(gorgiasCustomers.email, email));
+    return result || null;
+  },
+
+  /**
+   * Get total message count from warehouse
+   */
+  async getMessageCount(): Promise<number> {
+    if (!db) return 0;
+    const [result] = await db.select({ count: count() }).from(gorgiasMessages);
+    return result?.count || 0;
+  },
+
+  /**
+   * Get messages for a ticket
+   */
+  async getTicketMessages(ticketId: number): Promise<typeof gorgiasMessages.$inferSelect[]> {
+    if (!db) return [];
+    return db.select()
+      .from(gorgiasMessages)
+      .where(eq(gorgiasMessages.ticketId, ticketId))
+      .orderBy(gorgiasMessages.gorgiasCreatedAt);
+  },
+
+  /**
+   * Get agent/user count
+   */
+  async getUserCount(): Promise<number> {
+    if (!db) return 0;
+    const [result] = await db.select({ count: count() }).from(gorgiasUsers);
+    return result?.count || 0;
+  },
+
+  /**
+   * Get tag count
+   */
+  async getTagCount(): Promise<number> {
+    if (!db) return 0;
+    const [result] = await db.select({ count: count() }).from(gorgiasTags);
+    return result?.count || 0;
+  },
+
+  /**
+   * Get tickets by channel
+   */
+  async getTicketsByChannel(): Promise<Record<string, number>> {
+    if (!db) return {};
+    
+    const results = await db.select({
+      channel: gorgiasTickets.channel,
+      count: count(),
+    })
+    .from(gorgiasTickets)
+    .groupBy(gorgiasTickets.channel);
+    
+    return results.reduce((acc, row) => {
+      acc[row.channel] = row.count;
+      return acc;
+    }, {} as Record<string, number>);
+  },
+
+  /**
+   * Get average response time from Gorgias tickets
+   */
+  async getAvgResponseTime(): Promise<number | null> {
+    if (!db) return null;
+    
+    const result = await db.select({
+      avgTime: sql<string>`AVG(${gorgiasTickets.firstResponseTimeSeconds})`.as('avgTime'),
+    })
+    .from(gorgiasTickets)
+    .where(sql`${gorgiasTickets.firstResponseTimeSeconds} IS NOT NULL`);
+    
+    const avgTime = result[0]?.avgTime;
+    return avgTime ? parseFloat(avgTime) : null;
+  },
+
+  /**
+   * Get tickets created today
+   */
+  async getTicketsToday(): Promise<number> {
+    if (!db) return 0;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const [result] = await db.select({ count: count() })
+      .from(gorgiasTickets)
+      .where(gte(gorgiasTickets.gorgiasCreatedAt, today));
+    
+    return result?.count || 0;
+  },
+
+  /**
+   * Get comprehensive warehouse stats
+   */
+  async getWarehouseStats() {
+    if (!db) {
+      return {
+        totalTickets: 0,
+        openTickets: 0,
+        closedTickets: 0,
+        totalCustomers: 0,
+        totalMessages: 0,
+        totalAgents: 0,
+        totalTags: 0,
+        ticketsToday: 0,
+        avgResponseTimeSec: null as number | null,
+        channelBreakdown: {} as Record<string, number>,
+      };
+    }
+
+    const [ticketCounts, customerCount, messageCount, userCount, tagCount, ticketsToday, avgResponseTime, channelBreakdown] = await Promise.all([
+      this.getTicketStatusCounts(),
+      this.getCustomerCount(),
+      this.getMessageCount(),
+      this.getUserCount(),
+      this.getTagCount(),
+      this.getTicketsToday(),
+      this.getAvgResponseTime(),
+      this.getTicketsByChannel(),
+    ]);
+
+    return {
+      totalTickets: ticketCounts.open + ticketCounts.closed,
+      openTickets: ticketCounts.open,
+      closedTickets: ticketCounts.closed,
+      totalCustomers: customerCount,
+      totalMessages: messageCount,
+      totalAgents: userCount,
+      totalTags: tagCount,
+      ticketsToday,
+      avgResponseTimeSec: avgResponseTime,
+      channelBreakdown,
+    };
   },
 };
 
@@ -498,5 +990,7 @@ export const dbService = {
   escalations: escalationsService,
   notes: notesService,
   stats: statsService,
+  gorgiasWebhookEvents: gorgiasWebhookEventsService,
+  gorgiasWarehouse: gorgiasWarehouseService,
   isAvailable: isDatabaseAvailable,
 };

@@ -1,24 +1,16 @@
 'use client';
 
-/**
- * Neon Auth Provider for React
- * 
- * Wraps the app with authentication context using Neon Auth UI components.
- * Documentation: https://neon.com/docs/auth/overview
- */
-
-import { NeonAuthUIProvider } from '@neondatabase/neon-js/auth/react/ui';
-import { authClient } from './client';
 import { ReactNode } from 'react';
 
 interface AuthProviderProps {
   children: ReactNode;
 }
 
+/**
+ * Auth Provider for Better Auth
+ * Better Auth uses React's built-in context through its useSession hook
+ * This wrapper is kept for compatibility but doesn't need additional providers
+ */
 export function AuthProvider({ children }: AuthProviderProps) {
-  return (
-    <NeonAuthUIProvider authClient={authClient}>
-      {children}
-    </NeonAuthUIProvider>
-  );
+  return <>{children}</>;
 }

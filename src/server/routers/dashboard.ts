@@ -26,8 +26,24 @@ export const dashboardRouter = router({
    * Get dashboard statistics from database
    */
   getStats: publicProcedure.query(async () => {
-    const stats = await dbService.stats.getDashboardStats();
-    return stats;
+    const [stats, warehouseStats] = await Promise.all([
+      dbService.stats.getDashboardStats(),
+      dbService.gorgiasWarehouse.getWarehouseStats(),
+    ]);
+    
+    return {
+      ...stats,
+      // Gorgias warehouse data
+      gorgiasTickets: warehouseStats.totalTickets,
+      gorgiasOpenTickets: warehouseStats.openTickets,
+      gorgiasClosedTickets: warehouseStats.closedTickets,
+      gorgiasCustomers: warehouseStats.totalCustomers,
+      gorgiasMessages: warehouseStats.totalMessages,
+      gorgiasAgents: warehouseStats.totalAgents,
+      gorgiasTicketsToday: warehouseStats.ticketsToday,
+      gorgiasAvgResponseSec: warehouseStats.avgResponseTimeSec,
+      gorgiasChannels: warehouseStats.channelBreakdown,
+    };
   }),
 
   /**
@@ -51,6 +67,34 @@ export const dashboardRouter = router({
       return {
         conversations,
         hasMore: conversations.length === input.limit,
+      };
+    }),
+
+  /**
+   * Get Gorgias tickets with filtering
+   */
+  getGorgiasTickets: publicProcedure
+    .input(z.object({
+      status: z.enum(['all', 'open', 'closed']).default('all'),
+      channel: z.string().optional(),
+      limit: z.number().min(1).max(100).default(50),
+      offset: z.number().min(0).default(0),
+    }))
+    .query(async ({ input }) => {
+      const tickets = await dbService.gorgiasWarehouse.getRecentTickets(input.limit, input.offset);
+      
+      // Filter by status if needed
+      let filtered = tickets;
+      if (input.status !== 'all') {
+        filtered = tickets.filter(t => t.status === input.status);
+      }
+      if (input.channel) {
+        filtered = filtered.filter(t => t.channel === input.channel);
+      }
+      
+      return {
+        tickets: filtered,
+        hasMore: tickets.length === input.limit,
       };
     }),
 

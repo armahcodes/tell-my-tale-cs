@@ -2,8 +2,6 @@
 
 import { motion } from 'framer-motion';
 import {
-  TrendingUp,
-  TrendingDown,
   MessageSquare,
   Clock,
   CheckCircle,
@@ -69,10 +67,10 @@ export default function AnalyticsPage() {
       {/* Key Metrics - Responsive Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
         {[
-          { label: 'Total Conversations', value: totalConversations.toLocaleString(), change: '+18%', positive: true, icon: MessageSquare },
-          { label: 'Resolution Rate', value: `${aiResolutionRate}%`, change: '+5%', positive: true, icon: CheckCircle },
-          { label: 'Avg Response Time', value: avgResponseTime, change: 'Fast', positive: true, icon: Clock },
-          { label: 'CSAT Score', value: csatScore > 0 ? csatScore.toFixed(1) : '—', change: '+0.2', positive: true, icon: Star },
+          { label: 'Total Conversations', value: totalConversations.toLocaleString(), subtext: 'All time', icon: MessageSquare },
+          { label: 'Resolution Rate', value: `${aiResolutionRate}%`, subtext: aiResolutionRate >= 70 ? 'Good' : 'Needs improvement', positive: aiResolutionRate >= 70, icon: CheckCircle },
+          { label: 'Avg Response Time', value: avgResponseTime, subtext: 'Per message', icon: Clock },
+          { label: 'CSAT Score', value: csatScore > 0 ? csatScore.toFixed(1) : '—', subtext: csatScore > 0 ? '/5.0' : 'No ratings', icon: Star },
         ].map((metric, i) => (
           <motion.div
             key={metric.label}
@@ -85,10 +83,11 @@ export default function AnalyticsPage() {
               <div className="p-2 md:p-2.5 rounded-lg md:rounded-xl bg-gray-50">
                 <metric.icon className="w-4 h-4 md:w-5 md:h-5 text-[#1B2838]" />
               </div>
-              <span className={`flex items-center gap-0.5 text-[10px] md:text-xs font-semibold ${metric.positive ? 'text-green-600' : 'text-red-500'}`}>
-                {metric.positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                {metric.change}
-              </span>
+              {metric.subtext && (
+                <span className={`text-[10px] md:text-xs font-medium ${metric.positive === false ? 'text-amber-600' : 'text-gray-500'}`}>
+                  {metric.subtext}
+                </span>
+              )}
             </div>
             <p className="text-xl md:text-3xl font-bold text-[#1B2838]">{metric.value}</p>
             <p className="text-[10px] md:text-sm text-gray-500 mt-1">{metric.label}</p>

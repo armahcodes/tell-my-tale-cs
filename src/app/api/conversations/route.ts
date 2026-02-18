@@ -1,93 +1,102 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { dbService } from '@/lib/db/service';
+import { auth } from '@/lib/auth/auth';
+import { headers } from 'next/headers';
 
-// In-memory store for demo - in production, use a database
-const conversations = new Map<string, {
-  id: string;
-  messages: Array<{
-    id: string;
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp: string;
-    toolCalls?: Array<{
-      name: string;
-      args: Record<string, unknown>;
-      result?: unknown;
-    }>;
-  }>;
-  metadata: {
-    customerEmail?: string;
-    customerName?: string;
-    orderNumber?: string;
-    startedAt: string;
-    lastActivity: string;
-    status: 'active' | 'escalated' | 'resolved';
-    sentiment?: 'positive' | 'neutral' | 'negative';
-    resolvedWithoutEscalation: boolean;
-  };
-}>();
+export async function GET(req: NextRequest) {
+  try {
+    const searchParams = req.nextUrl.searchParams;
+    const id = searchParams.get('id');
+    const email = searchParams.get('email');
 
-export async function GET() {
-  // Return all conversations for dashboard
-  const allConversations = Array.from(conversations.values())
-    .sort((a, b) => 
-      new Date(b.metadata.lastActivity).getTime() - 
-      new Date(a.metadata.lastActivity).getTime()
+    // Get single conversation with messages
+    if (id) {
+      const conversation = await dbService.conversations.getById(id);
+      if (!conversation) {
+        return NextResponse.json(
+          { error: 'Conversation not found' },
+          { status: 404 }
+        );
+      }
+      const messages = await dbService.messages.getByConversationId(id);
+      return NextResponse.json({ conversation, messages });
+    }
+
+    // Get conversations by email
+    if (email) {
+      const conversations = await dbService.conversations.getByEmail(email);
+      return NextResponse.json({ conversations });
+    }
+
+    // Get authenticated user's conversations
+    let session = null;
+    try {
+      session = await auth.api.getSession({
+        headers: await headers(),
+      });
+    } catch {
+      // Continue without session
+    }
+
+    if (session?.user?.email) {
+      const conversations = await dbService.conversations.getByEmail(session.user.email);
+      return NextResponse.json({ conversations });
+    }
+
+    // Return recent conversations for dashboard
+    const conversations = await dbService.conversations.getRecent({ limit: 50 });
+    const counts = await dbService.conversations.getStatusCounts();
+
+    return NextResponse.json({
+      conversations,
+      stats: {
+        total: conversations.length,
+        ...counts,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch conversations' },
+      { status: 500 }
     );
-
-  return NextResponse.json({
-    conversations: allConversations,
-    stats: {
-      total: allConversations.length,
-      active: allConversations.filter(c => c.metadata.status === 'active').length,
-      escalated: allConversations.filter(c => c.metadata.status === 'escalated').length,
-      resolved: allConversations.filter(c => c.metadata.status === 'resolved').length,
-      resolvedWithoutEscalation: allConversations.filter(c => c.metadata.resolvedWithoutEscalation).length,
-    },
-  });
+  }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, message, metadata } = await req.json();
+    const body = await req.json();
+    const { customerEmail, customerName, channel, orderNumber } = body;
 
-    const id = conversationId || `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    if (!conversations.has(id)) {
-      conversations.set(id, {
-        id,
-        messages: [],
-        metadata: {
-          startedAt: new Date().toISOString(),
-          lastActivity: new Date().toISOString(),
-          status: 'active',
-          resolvedWithoutEscalation: false,
-          ...metadata,
-        },
-      });
+    if (!customerEmail) {
+      return NextResponse.json(
+        { error: 'Customer email is required' },
+        { status: 400 }
+      );
     }
 
-    const conversation = conversations.get(id)!;
-    
-    if (message) {
-      conversation.messages.push({
-        id: `msg-${Date.now()}`,
-        ...message,
-        timestamp: new Date().toISOString(),
-      });
-      conversation.metadata.lastActivity = new Date().toISOString();
-    }
+    const conversation = await dbService.conversations.create({
+      customerEmail,
+      customerName,
+      channel: channel || 'web_chat',
+      orderNumber,
+    });
 
-    if (metadata) {
-      conversation.metadata = { ...conversation.metadata, ...metadata };
+    if (!conversation) {
+      return NextResponse.json(
+        { error: 'Database not available' },
+        { status: 503 }
+      );
     }
 
     return NextResponse.json({ 
-      conversationId: id,
+      conversationId: conversation.id,
       conversation 
     });
   } catch (error) {
+    console.error('Error creating conversation:', error);
     return NextResponse.json(
-      { error: 'Failed to update conversation' },
+      { error: 'Failed to create conversation' },
       { status: 500 }
     );
   }
@@ -95,27 +104,28 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { conversationId, status, metadata } = await req.json();
+    const body = await req.json();
+    const { conversationId, status } = body;
 
-    if (!conversations.has(conversationId)) {
+    if (!conversationId) {
+      return NextResponse.json(
+        { error: 'Conversation ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const conversation = await dbService.conversations.updateStatus(conversationId, status);
+    
+    if (!conversation) {
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }
       );
     }
 
-    const conversation = conversations.get(conversationId)!;
-    
-    if (status) {
-      conversation.metadata.status = status;
-    }
-    
-    if (metadata) {
-      conversation.metadata = { ...conversation.metadata, ...metadata };
-    }
-
     return NextResponse.json({ conversation });
   } catch (error) {
+    console.error('Error updating conversation:', error);
     return NextResponse.json(
       { error: 'Failed to update conversation' },
       { status: 500 }

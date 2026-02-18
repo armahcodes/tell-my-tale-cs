@@ -1,6 +1,7 @@
 /**
  * Shopify Service - Unified API for store operations
  * Combines Storefront API, Customer Account API, and Admin API
+ * Falls back to mock data when Admin API is unavailable
  * 
  * Documentation: https://shopify.dev/docs/api/customer/2025-10
  */
@@ -23,6 +24,21 @@ import {
   type AdminOrder,
   type AdminCustomer,
 } from './admin';
+import {
+  MOCK_CUSTOMERS,
+  MOCK_ORDERS,
+  MOCK_PRODUCTS,
+  MOCK_STATS,
+  getMockCustomerByEmail,
+  getMockCustomerById,
+  getMockOrderById,
+  getMockOrdersByEmail,
+} from './mock-data';
+
+// Check if Admin API is available
+const USE_MOCK_DATA = !process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || 
+  process.env.SHOPIFY_ADMIN_ACCESS_TOKEN.startsWith('shpss_') ||
+  process.env.USE_MOCK_DATA === 'true';
 
 // Types
 export interface ShopifyProduct {
@@ -201,9 +217,21 @@ class ShopifyService {
 
   /**
    * Look up order by order number (for non-authenticated users)
-   * Uses Admin API to search by order name
+   * Uses Admin API to search by order name, or mock data if unavailable
    */
   async lookupOrderByNumber(orderNumber: string, email: string): Promise<OrderStatus | null> {
+    if (USE_MOCK_DATA) {
+      const orders = getMockOrdersByEmail(email);
+      const order = orders.find(o => 
+        o.name.includes(orderNumber) || 
+        o.legacyResourceId === orderNumber
+      );
+      if (order) {
+        return this.transformMockOrder(order);
+      }
+      return null;
+    }
+
     try {
       // Search for order by name (e.g., #1001 or TMT-1001)
       const query = `name:${orderNumber} email:${email}`;
@@ -232,13 +260,47 @@ class ShopifyService {
   // ============================================
 
   /**
-   * Get all orders from the store (Admin API)
+   * Check if using mock data
+   */
+  isUsingMockData(): boolean {
+    return USE_MOCK_DATA;
+  }
+
+  /**
+   * Get mock stats for dashboard
+   */
+  getMockStats() {
+    return MOCK_STATS;
+  }
+
+  /**
+   * Get all orders from the store (Admin API or mock data)
    */
   async getAllOrders(
     first: number = 50,
     after?: string,
     query?: string
   ): Promise<{ orders: OrderStatus[]; pageInfo: { hasNextPage: boolean; endCursor?: string } }> {
+    if (USE_MOCK_DATA) {
+      let orders = [...MOCK_ORDERS];
+      
+      // Apply search filter if query provided
+      if (query) {
+        const searchLower = query.toLowerCase();
+        orders = orders.filter(o => 
+          o.name.toLowerCase().includes(searchLower) ||
+          o.email.toLowerCase().includes(searchLower) ||
+          o.customer.firstName?.toLowerCase().includes(searchLower) ||
+          o.customer.lastName?.toLowerCase().includes(searchLower)
+        );
+      }
+
+      return {
+        orders: orders.slice(0, first).map(o => this.transformMockOrder(o)),
+        pageInfo: { hasNextPage: false, endCursor: undefined },
+      };
+    }
+
     try {
       const data = await adminApiQuery<{ 
         orders: { 
@@ -258,9 +320,14 @@ class ShopifyService {
   }
 
   /**
-   * Get a single order by ID (Admin API)
+   * Get a single order by ID (Admin API or mock data)
    */
   async getAdminOrderById(orderId: string): Promise<AdminOrder | null> {
+    if (USE_MOCK_DATA) {
+      const order = getMockOrderById(orderId);
+      return order as unknown as AdminOrder;
+    }
+
     try {
       // Ensure proper GID format
       const gid = orderId.startsWith('gid://') 
@@ -280,13 +347,32 @@ class ShopifyService {
   }
 
   /**
-   * Get all customers from the store (Admin API)
+   * Get all customers from the store (Admin API or mock data)
    */
   async getAllCustomers(
     first: number = 50,
     after?: string,
     query?: string
   ): Promise<{ customers: AdminCustomer[]; pageInfo: { hasNextPage: boolean; endCursor?: string } }> {
+    if (USE_MOCK_DATA) {
+      let customers = [...MOCK_CUSTOMERS];
+      
+      // Apply search filter if query provided
+      if (query) {
+        const searchLower = query.toLowerCase();
+        customers = customers.filter(c => 
+          c.email.toLowerCase().includes(searchLower) ||
+          c.firstName?.toLowerCase().includes(searchLower) ||
+          c.lastName?.toLowerCase().includes(searchLower)
+        );
+      }
+
+      return {
+        customers: customers.slice(0, first) as unknown as AdminCustomer[],
+        pageInfo: { hasNextPage: false, endCursor: undefined },
+      };
+    }
+
     try {
       const data = await adminApiQuery<{ 
         customers: { 
@@ -306,9 +392,14 @@ class ShopifyService {
   }
 
   /**
-   * Get a single customer by ID with their orders (Admin API)
+   * Get a single customer by ID with their orders (Admin API or mock data)
    */
   async getAdminCustomerById(customerId: string): Promise<AdminCustomer | null> {
+    if (USE_MOCK_DATA) {
+      const customer = getMockCustomerById(customerId);
+      return customer as unknown as AdminCustomer;
+    }
+
     try {
       // Ensure proper GID format
       const gid = customerId.startsWith('gid://') 
@@ -574,6 +665,81 @@ class ShopifyService {
     return {
       status: 'processing',
       statusDescription: 'Your personalized book is in production!',
+    };
+  }
+
+  // Transform mock order to our format
+  private transformMockOrder(mockOrder: any): OrderStatus {
+    const fulfillment = mockOrder.fulfillments?.[0];
+    const tracking = fulfillment?.trackingInfo?.[0];
+    
+    // Determine status based on displayFulfillmentStatus
+    let status: OrderStatusType = 'pending';
+    let statusDescription = 'Order received and being processed';
+
+    if (mockOrder.cancelledAt) {
+      status = 'cancelled';
+      statusDescription = 'This order has been cancelled';
+    } else if (mockOrder.displayFulfillmentStatus === 'FULFILLED') {
+      status = 'delivered';
+      statusDescription = 'Your book has been delivered!';
+    } else if (mockOrder.displayFulfillmentStatus === 'IN_PROGRESS') {
+      status = 'shipped';
+      statusDescription = 'Your book is on its way!';
+    } else if (mockOrder.displayFulfillmentStatus === 'UNFULFILLED') {
+      const processedAt = new Date(mockOrder.processedAt || mockOrder.createdAt);
+      const hoursSinceOrder = (Date.now() - processedAt.getTime()) / (1000 * 60 * 60);
+      if (hoursSinceOrder < 2) {
+        status = 'pending';
+        statusDescription = 'Order received and being processed';
+      } else {
+        status = 'processing';
+        statusDescription = 'Your personalized book is in production!';
+      }
+    }
+
+    const processedAt = new Date(mockOrder.processedAt || mockOrder.createdAt);
+    const hoursSinceOrder = (Date.now() - processedAt.getTime()) / (1000 * 60 * 60);
+    const canBeModified = hoursSinceOrder <= 24 && ['pending', 'processing'].includes(status);
+
+    return {
+      orderNumber: mockOrder.legacyResourceId || mockOrder.name.replace('#', '').replace('TMT-', ''),
+      orderId: mockOrder.id,
+      orderName: mockOrder.name,
+      customerName: mockOrder.shippingAddress 
+        ? `${mockOrder.shippingAddress.firstName || ''} ${mockOrder.shippingAddress.lastName || ''}`.trim()
+        : mockOrder.customer?.firstName && mockOrder.customer?.lastName
+          ? `${mockOrder.customer.firstName} ${mockOrder.customer.lastName}`
+          : 'Customer',
+      email: mockOrder.email,
+      status,
+      statusDescription,
+      fulfillmentStatus: mockOrder.displayFulfillmentStatus,
+      financialStatus: mockOrder.displayFinancialStatus,
+      processedAt: mockOrder.processedAt || mockOrder.createdAt,
+      totalPrice: mockOrder.totalPrice || mockOrder.totalPriceCurrency ? mockOrder.totalPrice : '0',
+      currencyCode: mockOrder.totalPriceCurrency || 'USD',
+      items: mockOrder.lineItems?.map((item: any) => ({
+        name: item.title,
+        quantity: item.quantity,
+        price: item.price,
+        customAttributes: item.customAttributes,
+      })) || [],
+      shippingAddress: mockOrder.shippingAddress ? {
+        firstName: mockOrder.shippingAddress.firstName || '',
+        lastName: mockOrder.shippingAddress.lastName || '',
+        address1: mockOrder.shippingAddress.address1 || '',
+        city: mockOrder.shippingAddress.city || '',
+        province: mockOrder.shippingAddress.province || '',
+        country: mockOrder.shippingAddress.country || '',
+        zip: mockOrder.shippingAddress.zip || '',
+      } : undefined,
+      tracking: tracking ? {
+        company: tracking.company,
+        number: tracking.number,
+        url: tracking.url,
+      } : undefined,
+      canBeModified,
     };
   }
 }

@@ -5,13 +5,13 @@
 
 import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
-import { getSession } from '@/lib/auth';
+import { getServerSession } from '@/lib/auth/server';
 
 /**
  * Context creation for each request
  */
 export const createContext = async () => {
-  const session = await getSession();
+  const session = await getServerSession();
   
   return {
     session,
