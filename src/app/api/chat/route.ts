@@ -12,11 +12,6 @@ interface ChatMessage {
   content: string;
 }
 
-type AgentMessage = {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-};
-
 interface ChatRequestBody {
   messages: ChatMessage[];
   conversationId?: string;
@@ -111,7 +106,7 @@ export async function POST(req: NextRequest) {
         : '';
 
     // Format messages for the agent with user context
-    const formattedMessages: AgentMessage[] = [
+    const formattedMessages = [
       ...(userContext ? [{
         role: 'system' as const,
         content: userContext,
