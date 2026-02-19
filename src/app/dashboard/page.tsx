@@ -9,17 +9,27 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle,
-  Star,
-  Zap,
-  BookOpen,
-  Package,
+  Ticket,
+  Mail,
+  Phone,
+  Headphones,
+  ExternalLink,
+  RefreshCw,
+  Timer,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { Header } from '@/components/dashboard/Header';
 
+const channelIcons: Record<string, React.ReactNode> = {
+  email: <Mail className="w-4 h-4" />,
+  phone: <Phone className="w-4 h-4" />,
+  chat: <MessageSquare className="w-4 h-4" />,
+  helpdesk: <Headphones className="w-4 h-4" />,
+};
+
 export default function DashboardPage() {
-  // tRPC queries for real data
-  const { data: statsData, refetch: refetchStats, isLoading: isStatsLoading } = trpc.dashboard.getStats.useQuery(
+  // Gorgias data warehouse stats
+  const { data: statsData, refetch: refetchStats, isLoading: isStatsLoading, isFetching } = trpc.dashboard.getStats.useQuery(
     undefined,
     { 
       refetchInterval: 30000,
@@ -29,24 +39,24 @@ export default function DashboardPage() {
     }
   );
 
-  const { data: productsData } = trpc.shopify.getProducts.useQuery({ limit: 10 });
-  const { data: ordersData } = trpc.shopify.getAllOrders.useQuery({ first: 5 });
-  const { data: customersData } = trpc.shopify.getAllCustomers.useQuery({ first: 5 });
+  // Recent tickets from Gorgias
+  const { data: ticketsData, refetch: refetchTickets } = trpc.dashboard.getGorgiasTickets.useQuery({
+    status: 'all',
+    limit: 5,
+  }, {
+    refetchOnMount: true,
+    staleTime: 0,
+  });
+
+  // Recent customers from Gorgias
+  const { data: customersData, refetch: refetchCustomers } = trpc.dashboard.getGorgiasCustomers.useQuery({
+    limit: 5,
+  }, {
+    refetchOnMount: true,
+    staleTime: 0,
+  });
 
   const stats = statsData || {
-    totalConversations: 0,
-    activeNow: 0,
-    resolvedToday: 0,
-    avgResponseTime: '—',
-    aiResolutionRate: 0,
-    csatScore: 0,
-    escalationRate: 0,
-    pendingEscalations: 0,
-    highPriorityCount: 0,
-    mediumPriorityCount: 0,
-    totalMessages: 0,
-    conversationsToday: 0,
-    // Gorgias warehouse data
     gorgiasTickets: 0,
     gorgiasOpenTickets: 0,
     gorgiasClosedTickets: 0,
@@ -58,46 +68,93 @@ export default function DashboardPage() {
     gorgiasChannels: {} as Record<string, number>,
   };
 
+  const tickets = ticketsData?.tickets || [];
+  const customers = customersData?.customers || [];
+
   const handleRefresh = async () => {
-    await refetchStats();
+    await Promise.all([refetchStats(), refetchTickets(), refetchCustomers()]);
   };
 
+  const formatResponseTime = (seconds: number | null) => {
+    if (!seconds) return '—';
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+    return `${(seconds / 3600).toFixed(1)}h`;
+  };
+
+  const formatTimeAgo = (dateString: string | Date | null) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const getInitials = (firstname?: string | null, lastname?: string | null, name?: string | null, email?: string | null) => {
+    if (firstname || lastname) {
+      return `${firstname?.[0] || ''}${lastname?.[0] || ''}`.toUpperCase() || '?';
+    }
+    if (name) {
+      const parts = name.split(' ');
+      return parts.length > 1 
+        ? `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+        : name.substring(0, 2).toUpperCase();
+    }
+    if (email) {
+      return email.substring(0, 2).toUpperCase();
+    }
+    return '?';
+  };
+
+  // Calculate resolution rate
+  const resolutionRate = stats.gorgiasTickets > 0 
+    ? Math.round((stats.gorgiasClosedTickets / stats.gorgiasTickets) * 100) 
+    : 0;
 
   return (
     <>
       <Header 
         title="Dashboard" 
-        subtitle="Here's what's happening with your customers today"
+        subtitle="Support metrics from Gorgias data warehouse"
         onRefresh={handleRefresh}
       />
 
-      {/* Stats Grid - Responsive */}
+      {/* Main Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-5 mb-6 md:mb-8">
         {[
           {
-            icon: MessageSquare,
-            label: 'Total Conversations',
-            value: stats.totalConversations,
-            subtext: stats.conversationsToday > 0 ? `+${stats.conversationsToday} today` : undefined,
+            icon: Ticket,
+            label: 'Total Tickets',
+            value: stats.gorgiasTickets.toLocaleString(),
+            subtext: stats.gorgiasTicketsToday > 0 ? `+${stats.gorgiasTicketsToday} today` : undefined,
+            color: 'purple',
+          },
+          {
+            icon: AlertCircle,
+            label: 'Open Tickets',
+            value: stats.gorgiasOpenTickets.toLocaleString(),
+            live: stats.gorgiasOpenTickets > 0,
+            color: 'amber',
           },
           {
             icon: Users,
-            label: 'Active Now',
-            value: stats.activeNow,
-            live: true,
+            label: 'Customers',
+            value: stats.gorgiasCustomers.toLocaleString(),
+            color: 'blue',
           },
           {
-            icon: Clock,
+            icon: Timer,
             label: 'Avg Response',
-            value: stats.avgResponseTime,
-            subtext: stats.totalMessages > 0 ? `${stats.totalMessages} messages` : undefined,
-          },
-          {
-            icon: Star,
-            label: 'CSAT Score',
-            value: stats.csatScore > 0 ? stats.csatScore.toFixed(1) : '—',
-            suffix: stats.csatScore > 0 ? '/5.0' : '',
-            subtext: stats.csatScore === 0 ? 'No ratings yet' : undefined,
+            value: formatResponseTime(stats.gorgiasAvgResponseSec),
+            subtext: stats.gorgiasMessages > 0 ? `${stats.gorgiasMessages.toLocaleString()} messages` : undefined,
+            color: 'teal',
           },
         ].map((stat, i) => (
           <motion.div
@@ -108,8 +165,8 @@ export default function DashboardPage() {
             className="bg-white rounded-xl md:rounded-2xl p-3 md:p-5 shadow-sm hover:shadow-md transition-all duration-300 border border-gray-200"
           >
             <div className="flex items-center justify-between mb-2 md:mb-4">
-              <div className="p-2 md:p-3 rounded-lg md:rounded-xl bg-gray-50">
-                <stat.icon className="w-4 h-4 md:w-5 md:h-5 text-[#1B2838]" />
+              <div className={`p-2 md:p-3 rounded-lg md:rounded-xl bg-${stat.color}-50`}>
+                <stat.icon className={`w-4 h-4 md:w-5 md:h-5 text-${stat.color}-600`} />
               </div>
               {stat.subtext && (
                 <span className="hidden sm:flex items-center gap-1 text-[10px] md:text-xs font-medium text-gray-500">
@@ -118,219 +175,142 @@ export default function DashboardPage() {
               )}
               {stat.live && (
                 <div className="flex items-center gap-1">
-                  <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-[10px] md:text-xs font-medium text-green-600">Live</span>
+                  <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="text-[10px] md:text-xs font-medium text-amber-600">Active</span>
                 </div>
               )}
             </div>
             <div className="flex items-baseline gap-1">
               <p className="text-xl md:text-3xl font-bold text-[#1B2838]">{stat.value}</p>
-              {stat.suffix && <span className="text-sm md:text-lg text-gray-500">{stat.suffix}</span>}
             </div>
             <p className="text-xs md:text-sm text-gray-500 mt-1">{stat.label}</p>
           </motion.div>
         ))}
       </div>
 
-      {/* Main Grid - Responsive */}
+      {/* Performance & Channels Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
-        {/* AI Performance */}
+        {/* Resolution Stats */}
         <div className="lg:col-span-2 bg-white rounded-xl md:rounded-2xl p-4 md:p-6 shadow-sm border border-gray-200">
           <div className="flex items-center justify-between mb-4 md:mb-6">
-            <h3 className="text-base md:text-lg font-bold text-[#1B2838]">AI Performance</h3>
-            <span className="text-xs md:text-sm text-gray-500">Last 24 hours</span>
+            <h3 className="text-base md:text-lg font-bold text-[#1B2838]">Ticket Resolution</h3>
+            <span className="text-xs md:text-sm text-gray-500">All time</span>
           </div>
           <div className="grid grid-cols-3 gap-2 md:gap-4">
             <div className="text-center p-3 md:p-5 rounded-xl md:rounded-2xl bg-green-50 border border-green-100">
               <div className="w-10 h-10 md:w-14 md:h-14 mx-auto rounded-full bg-white shadow-sm flex items-center justify-center mb-2 md:mb-3">
                 <CheckCircle className="w-5 h-5 md:w-7 md:h-7 text-green-600" />
               </div>
-              <p className="text-lg md:text-3xl font-bold text-green-700">{stats.aiResolutionRate}%</p>
-              <p className="text-[10px] md:text-sm text-gray-600 mt-1">Resolved by AI</p>
+              <p className="text-lg md:text-3xl font-bold text-green-700">{resolutionRate}%</p>
+              <p className="text-[10px] md:text-sm text-gray-600 mt-1">Resolution Rate</p>
+            </div>
+            <div className="text-center p-3 md:p-5 rounded-xl md:rounded-2xl bg-green-50 border border-green-100">
+              <div className="w-10 h-10 md:w-14 md:h-14 mx-auto rounded-full bg-white shadow-sm flex items-center justify-center mb-2 md:mb-3">
+                <Ticket className="w-5 h-5 md:w-7 md:h-7 text-green-600" />
+              </div>
+              <p className="text-lg md:text-3xl font-bold text-green-700">{stats.gorgiasClosedTickets.toLocaleString()}</p>
+              <p className="text-[10px] md:text-sm text-gray-600 mt-1">Closed</p>
             </div>
             <div className="text-center p-3 md:p-5 rounded-xl md:rounded-2xl bg-amber-50 border border-amber-100">
               <div className="w-10 h-10 md:w-14 md:h-14 mx-auto rounded-full bg-white shadow-sm flex items-center justify-center mb-2 md:mb-3">
-                <AlertCircle className="w-5 h-5 md:w-7 md:h-7 text-amber-600" />
+                <Clock className="w-5 h-5 md:w-7 md:h-7 text-amber-600" />
               </div>
-              <p className="text-lg md:text-3xl font-bold text-amber-700">{stats.escalationRate}%</p>
-              <p className="text-[10px] md:text-sm text-gray-600 mt-1">Escalation</p>
-            </div>
-            <div className="text-center p-3 md:p-5 rounded-xl md:rounded-2xl bg-blue-50 border border-blue-100">
-              <div className="w-10 h-10 md:w-14 md:h-14 mx-auto rounded-full bg-white shadow-sm flex items-center justify-center mb-2 md:mb-3">
-                <TrendingUp className="w-5 h-5 md:w-7 md:h-7 text-blue-600" />
-              </div>
-              <p className="text-lg md:text-3xl font-bold text-blue-700">{stats.resolvedToday}</p>
-              <p className="text-[10px] md:text-sm text-gray-600 mt-1">Resolved Today</p>
+              <p className="text-lg md:text-3xl font-bold text-amber-700">{stats.gorgiasOpenTickets.toLocaleString()}</p>
+              <p className="text-[10px] md:text-sm text-gray-600 mt-1">Open</p>
             </div>
           </div>
         </div>
 
-        {/* Escalation Queue */}
+        {/* Channel Breakdown */}
         <div className="bg-[#1B2838] rounded-xl md:rounded-2xl p-4 md:p-6 text-white shadow-lg">
           <div className="flex items-center justify-between mb-4 md:mb-5">
-            <h3 className="text-base md:text-lg font-bold">Escalation Queue</h3>
-            <Zap className="w-4 h-4 md:w-5 md:h-5 text-white/60" />
+            <h3 className="text-base md:text-lg font-bold">Channels</h3>
+            <Mail className="w-4 h-4 md:w-5 md:h-5 text-white/60" />
           </div>
-          <div className="space-y-2 md:space-y-3">
-            <div className="p-3 md:p-4 bg-white/10 rounded-lg md:rounded-xl">
-              <div className="flex items-center justify-between">
-                <span className="text-xs md:text-sm font-medium text-white/70">High Priority</span>
-                <span className="text-xl md:text-2xl font-bold">{stats.highPriorityCount}</span>
-              </div>
+          {Object.keys(stats.gorgiasChannels).length > 0 ? (
+            <div className="space-y-2 md:space-y-3">
+              {Object.entries(stats.gorgiasChannels)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 4)
+                .map(([channel, count]) => {
+                  const total = Object.values(stats.gorgiasChannels).reduce((a, b) => a + b, 0);
+                  const percentage = Math.round((count / total) * 100);
+                  return (
+                    <div key={channel} className="p-3 md:p-4 bg-white/10 rounded-lg md:rounded-xl">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs md:text-sm font-medium text-white/70 capitalize flex items-center gap-2">
+                          {channelIcons[channel] || <MessageSquare className="w-4 h-4" />}
+                          {channel}
+                        </span>
+                        <span className="text-sm md:text-lg font-bold">{count}</span>
+                      </div>
+                      <div className="w-full bg-white/20 rounded-full h-1.5">
+                        <div 
+                          className="bg-white h-1.5 rounded-full transition-all" 
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
-            <div className="p-3 md:p-4 bg-white/5 rounded-lg md:rounded-xl">
-              <div className="flex items-center justify-between">
-                <span className="text-xs md:text-sm font-medium text-white/70">Medium Priority</span>
-                <span className="text-xl md:text-2xl font-bold">{stats.mediumPriorityCount}</span>
-              </div>
-            </div>
-            <a 
-              href="/dashboard/conversations?filter=escalated"
-              className="block w-full py-2.5 md:py-3 bg-white text-[#1B2838] rounded-lg md:rounded-xl font-semibold hover:bg-gray-100 transition-all text-center text-sm md:text-base"
-            >
-              View All Escalations
-            </a>
-          </div>
-        </div>
-      </div>
-
-      {/* Gorgias Data Warehouse Stats */}
-      {isStatsLoading ? (
-        <div className="bg-gradient-to-br from-gray-50 to-slate-50 rounded-xl md:rounded-2xl p-4 md:p-6 shadow-sm border border-gray-200 mb-6 md:mb-8">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gray-200 animate-pulse">
-              <MessageSquare className="w-5 h-5 text-gray-400" />
-            </div>
-            <div>
-              <h3 className="text-base md:text-lg font-bold text-[#1B2838]">Gorgias Data Warehouse</h3>
-              <p className="text-xs text-gray-500">Loading...</p>
-            </div>
-          </div>
-        </div>
-      ) : !stats.gorgiasTickets || stats.gorgiasTickets === 0 ? (
-        <div className="bg-gradient-to-br from-gray-50 to-slate-50 rounded-xl md:rounded-2xl p-4 md:p-6 shadow-sm border border-gray-200 mb-6 md:mb-8">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 rounded-lg bg-gray-200">
-              <MessageSquare className="w-5 h-5 text-gray-500" />
-            </div>
-            <div>
-              <h3 className="text-base md:text-lg font-bold text-[#1B2838]">Gorgias Data Warehouse</h3>
-              <p className="text-xs text-gray-500">No data synced yet</p>
-            </div>
-          </div>
-          <p className="text-sm text-gray-600 mb-3">
-            Sync your Gorgias tickets, customers, and messages to see analytics here.
-          </p>
-          <code className="block bg-gray-100 p-2 rounded text-xs text-gray-700 font-mono">
-            npx ts-node scripts/sync-warehouse.ts
-          </code>
-        </div>
-      ) : (
-        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl md:rounded-2xl p-4 md:p-6 shadow-sm border border-purple-100 mb-6 md:mb-8">
-          <div className="flex items-center justify-between mb-4 md:mb-5">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-purple-500/10">
-                <MessageSquare className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
-              </div>
-              <h3 className="text-base md:text-lg font-bold text-[#1B2838]">Gorgias Data Warehouse</h3>
-            </div>
-            <span className="text-xs text-purple-600 font-medium px-2 py-1 bg-purple-100 rounded-full">
-              Synced
-            </span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
-            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
-              <p className="text-xl md:text-2xl font-bold text-purple-700">{stats.gorgiasTickets.toLocaleString()}</p>
-              <p className="text-[10px] md:text-xs text-gray-600">Total Tickets</p>
-            </div>
-            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
-              <p className="text-xl md:text-2xl font-bold text-blue-600">{stats.gorgiasOpenTickets.toLocaleString()}</p>
-              <p className="text-[10px] md:text-xs text-gray-600">Open</p>
-            </div>
-            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
-              <p className="text-xl md:text-2xl font-bold text-green-600">{stats.gorgiasClosedTickets.toLocaleString()}</p>
-              <p className="text-[10px] md:text-xs text-gray-600">Closed</p>
-            </div>
-            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
-              <p className="text-xl md:text-2xl font-bold text-indigo-600">{stats.gorgiasCustomers.toLocaleString()}</p>
-              <p className="text-[10px] md:text-xs text-gray-600">Customers</p>
-            </div>
-            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
-              <p className="text-xl md:text-2xl font-bold text-amber-600">{stats.gorgiasMessages.toLocaleString()}</p>
-              <p className="text-[10px] md:text-xs text-gray-600">Messages</p>
-            </div>
-            <div className="bg-white/70 rounded-xl p-3 md:p-4 text-center">
-              <p className="text-xl md:text-2xl font-bold text-teal-600">
-                {stats.gorgiasAvgResponseSec 
-                  ? stats.gorgiasAvgResponseSec < 60 
-                    ? `${Math.round(stats.gorgiasAvgResponseSec)}s`
-                    : stats.gorgiasAvgResponseSec < 3600
-                      ? `${Math.round(stats.gorgiasAvgResponseSec / 60)}m`
-                      : `${Math.round(stats.gorgiasAvgResponseSec / 3600)}h`
-                  : '—'}
-              </p>
-              <p className="text-[10px] md:text-xs text-gray-600">Avg Response</p>
-            </div>
-          </div>
-          {Object.keys(stats.gorgiasChannels).length > 0 && (
-            <div className="mt-4 pt-4 border-t border-purple-100">
-              <p className="text-xs font-medium text-gray-600 mb-2">Tickets by Channel</p>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(stats.gorgiasChannels).map(([channel, ticketCount]) => (
-                  <span key={channel} className="inline-flex items-center gap-1 px-2 py-1 bg-white/70 rounded-lg text-xs text-gray-700">
-                    <span className="font-medium capitalize">{channel}:</span>
-                    <span className="text-purple-600">{ticketCount}</span>
-                  </span>
-                ))}
-              </div>
+          ) : (
+            <div className="text-center py-6 text-white/60 text-sm">
+              No channel data yet
             </div>
           )}
         </div>
-      )}
+      </div>
 
-      {/* Recent Orders & Customers - Two Column */}
+      {/* Recent Tickets & Customers */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
-        {/* Recent Orders */}
+        {/* Recent Tickets */}
         <div className="bg-white rounded-xl md:rounded-2xl p-4 md:p-6 shadow-sm border border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base md:text-lg font-bold text-[#1B2838]">Recent Orders</h3>
+            <h3 className="text-base md:text-lg font-bold text-[#1B2838]">Recent Tickets</h3>
             <Link href="/dashboard/orders" className="text-xs md:text-sm text-[#1B2838] hover:underline font-medium">
               View all →
             </Link>
           </div>
-          {ordersData?.orders && ordersData.orders.length > 0 ? (
+          {tickets.length > 0 ? (
             <div className="space-y-3">
-              {ordersData.orders.slice(0, 4).map((order) => (
-                <Link
-                  key={order.orderId}
-                  href={`/dashboard/orders/${order.orderId.replace('gid://shopify/Order/', '')}`}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+              {tickets.map((ticket) => (
+                <a
+                  key={ticket.id}
+                  href={`https://${process.env.NEXT_PUBLIC_GORGIAS_DOMAIN || 'tellmytale'}.gorgias.com/app/ticket/${ticket.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors group"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-[#1B2838]/10 flex items-center justify-center flex-shrink-0">
-                    <Package className="w-5 h-5 text-[#1B2838]/50" />
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                    ticket.channel === 'email' ? 'bg-blue-50 text-blue-600' :
+                    ticket.channel === 'chat' ? 'bg-purple-50 text-purple-600' :
+                    'bg-gray-100 text-gray-500'
+                  }`}>
+                    {channelIcons[ticket.channel || 'email'] || <Headphones className="w-5 h-5" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm text-[#1B2838]">{order.orderName}</p>
-                    <p className="text-xs text-gray-500 truncate">{order.customerName}</p>
+                    <p className="font-medium text-sm text-[#1B2838] truncate">{ticket.subject || 'No subject'}</p>
+                    <p className="text-xs text-gray-500 truncate">{ticket.customerName || ticket.customerEmail}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-sm text-[#1B2838]">${order.totalPrice}</p>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${
-                      order.status === 'delivered' ? 'bg-green-50 text-green-700' :
-                      order.status === 'shipped' ? 'bg-purple-50 text-purple-700' :
-                      order.status === 'processing' ? 'bg-blue-50 text-blue-700' :
-                      'bg-amber-50 text-amber-700'
-                    }`}>
-                      {order.status}
-                    </span>
+                  <div className="text-right flex items-center gap-2">
+                    <div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${
+                        ticket.status === 'closed' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+                      }`}>
+                        {ticket.status}
+                      </span>
+                      <p className="text-[10px] text-gray-400 mt-1">{formatTimeAgo(ticket.gorgiasCreatedAt)}</p>
+                    </div>
+                    <ExternalLink className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
-                </Link>
+                </a>
               ))}
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500 text-sm">
-              <Package className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-              No orders yet. Connect Shopify Admin API.
+              <Ticket className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+              No tickets synced yet
             </div>
           )}
         </div>
@@ -343,82 +323,61 @@ export default function DashboardPage() {
               View all →
             </Link>
           </div>
-          {customersData?.customers && customersData.customers.length > 0 ? (
+          {customers.length > 0 ? (
             <div className="space-y-3">
-              {customersData.customers.slice(0, 4).map((customer) => (
-                <Link
+              {customers.map((customer) => (
+                <a
                   key={customer.id}
-                  href={`/dashboard/customers/${customer.legacyResourceId}`}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+                  href={`https://${process.env.NEXT_PUBLIC_GORGIAS_DOMAIN || 'tellmytale'}.gorgias.com/app/customers/${customer.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors group"
                 >
-                  <div className="w-10 h-10 rounded-full bg-[#1B2838] flex items-center justify-center flex-shrink-0 text-white font-semibold text-sm">
-                    {(customer.firstName?.[0] || '') + (customer.lastName?.[0] || '')}
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center flex-shrink-0 text-white font-semibold text-sm">
+                    {getInitials(customer.firstname, customer.lastname, customer.name, customer.email)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm text-[#1B2838]">
-                      {customer.firstName || customer.lastName 
-                        ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim()
-                        : 'No Name'}
+                      {customer.name || customer.firstname || customer.lastname 
+                        ? customer.name || `${customer.firstname || ''} ${customer.lastname || ''}`.trim()
+                        : customer.email || 'Unknown'}
                     </p>
                     <p className="text-xs text-gray-500 truncate">{customer.email}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-sm text-[#1B2838]">${customer.amountSpent?.amount || '0.00'}</p>
-                    <p className="text-[10px] text-gray-500">{customer.numberOfOrders || 0} orders</p>
+                  <div className="text-right flex items-center gap-2">
+                    <div>
+                      {(customer.ticketCount || 0) > 0 && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                          {customer.ticketCount} tickets
+                        </span>
+                      )}
+                      {(customer.openTicketCount || 0) > 0 && (
+                        <p className="text-[10px] text-amber-600 mt-1">{customer.openTicketCount} open</p>
+                      )}
+                    </div>
+                    <ExternalLink className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
-                </Link>
+                </a>
               ))}
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500 text-sm">
               <Users className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-              No customers yet. Connect Shopify Admin API.
+              No customers synced yet
             </div>
           )}
         </div>
       </div>
 
-      {/* Products from Shopify - Responsive */}
-      {productsData?.products && productsData.products.length > 0 && (
-        <div className="bg-white rounded-xl md:rounded-2xl p-4 md:p-6 shadow-sm border border-gray-200 mb-6 md:mb-8">
-          <div className="flex items-center justify-between mb-4 md:mb-5">
-            <h3 className="text-base md:text-lg font-bold text-[#1B2838]">Products</h3>
-            <a href="/dashboard/orders" className="text-xs md:text-sm text-[#1B2838] hover:underline font-medium">
-              View all →
-            </a>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
-            {productsData.products.slice(0, 5).map((product) => (
-              <div key={product.id} className="text-center p-3 md:p-4 rounded-lg md:rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer border border-gray-200">
-                {product.images[0]?.url ? (
-                  <img 
-                    src={product.images[0].url} 
-                    alt={product.title}
-                    className="w-12 h-12 md:w-16 md:h-16 mx-auto rounded-lg md:rounded-xl object-cover mb-2 md:mb-3"
-                  />
-                ) : (
-                  <div className="w-12 h-12 md:w-16 md:h-16 mx-auto rounded-lg md:rounded-xl bg-[#1B2838]/10 flex items-center justify-center mb-2 md:mb-3">
-                    <BookOpen className="w-6 h-6 md:w-8 md:h-8 text-[#1B2838]" />
-                  </div>
-                )}
-                <p className="text-xs md:text-sm font-medium text-[#1B2838] truncate">{product.title}</p>
-                <p className="text-[10px] md:text-xs text-gray-500">${product.price}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Quick Actions - Responsive */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
+      {/* Quick Actions */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {[
-          { label: 'Conversations', href: '/dashboard/conversations', icon: MessageSquare },
-          { label: 'Orders', href: '/dashboard/orders', icon: Package },
+          { label: 'Tickets', href: '/dashboard/orders', icon: Ticket },
           { label: 'Customers', href: '/dashboard/customers', icon: Users },
           { label: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp },
-          { label: 'Settings', href: '/dashboard/settings', icon: AlertCircle },
+          { label: 'Conversations', href: '/dashboard/conversations', icon: MessageSquare },
         ].map((action) => (
-          <a
+          <Link
             key={action.label}
             href={action.href}
             className="p-3 md:p-4 bg-white rounded-lg md:rounded-xl border border-gray-200 hover:shadow-md hover:border-[#1B2838]/20 transition-all flex items-center gap-2 md:gap-3 group"
@@ -429,9 +388,23 @@ export default function DashboardPage() {
             <span className="text-xs md:text-sm font-medium text-[#1B2838]">
               {action.label}
             </span>
-          </a>
+          </Link>
         ))}
       </div>
+
+      {/* Empty State - Show if no Gorgias data */}
+      {!isStatsLoading && stats.gorgiasTickets === 0 && (
+        <div className="mt-8 bg-gradient-to-br from-gray-50 to-slate-50 rounded-2xl p-6 md:p-8 border border-gray-200 text-center">
+          <Ticket className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+          <h3 className="text-lg font-bold text-[#1B2838] mb-2">No Gorgias Data Yet</h3>
+          <p className="text-sm text-gray-600 mb-4 max-w-md mx-auto">
+            Sync your Gorgias tickets, customers, and messages to see your support metrics here.
+          </p>
+          <code className="block bg-gray-100 p-3 rounded-lg text-xs text-gray-700 font-mono max-w-md mx-auto">
+            npx ts-node scripts/sync-warehouse.ts
+          </code>
+        </div>
+      )}
     </>
   );
 }
