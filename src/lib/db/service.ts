@@ -3,7 +3,7 @@
  * Provides CRUD operations for all database entities
  */
 
-import { eq, desc, and, gte, lte, sql, count } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, sql, count, inArray } from 'drizzle-orm';
 import { db, isDatabaseAvailable } from './index';
 import {
   conversations,
@@ -812,6 +812,18 @@ export const gorgiasWarehouseService = {
   },
 
   /**
+   * Get tickets by customer ID
+   */
+  async getTicketsByCustomerId(customerId: number, limit = 100): Promise<GorgiasTicketRecord[]> {
+    if (!db) return [];
+    return db.select()
+      .from(gorgiasTickets)
+      .where(eq(gorgiasTickets.customerId, customerId))
+      .orderBy(desc(gorgiasTickets.gorgiasCreatedAt))
+      .limit(limit);
+  },
+
+  /**
    * Get total customer count
    */
   async getCustomerCount(): Promise<number> {
@@ -821,14 +833,39 @@ export const gorgiasWarehouseService = {
   },
 
   /**
-   * Get recent customers
+   * Get recent customers with computed ticket counts
    */
-  async getRecentCustomers(limit = 20): Promise<GorgiasCustomerRecord[]> {
+  async getRecentCustomers(limit = 20): Promise<(GorgiasCustomerRecord & { computedTicketCount: number; computedOpenTicketCount: number })[]> {
     if (!db) return [];
-    return db.select()
+    
+    // Get customers
+    const customers = await db.select()
       .from(gorgiasCustomers)
       .orderBy(desc(gorgiasCustomers.gorgiasCreatedAt))
       .limit(limit);
+    
+    if (customers.length === 0) return [];
+    
+    // Get ticket counts for these customers
+    const customerIds = customers.map(c => c.id);
+    const ticketCounts = await db.select({
+      customerId: gorgiasTickets.customerId,
+      total: count(),
+      open: sql<number>`count(*) filter (where ${gorgiasTickets.status} = 'open')`,
+    })
+      .from(gorgiasTickets)
+      .where(inArray(gorgiasTickets.customerId, customerIds))
+      .groupBy(gorgiasTickets.customerId);
+    
+    // Create a map for quick lookup
+    const countMap = new Map(ticketCounts.map(tc => [tc.customerId, { total: tc.total, open: tc.open }]));
+    
+    // Enrich customers with computed counts
+    return customers.map(c => ({
+      ...c,
+      computedTicketCount: countMap.get(c.id)?.total || 0,
+      computedOpenTicketCount: countMap.get(c.id)?.open || 0,
+    }));
   },
 
   /**

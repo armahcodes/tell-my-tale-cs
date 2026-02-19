@@ -243,7 +243,7 @@ export const dashboardRouter = router({
     }),
 
   /**
-   * Get Gorgias customers with filtering
+   * Get Gorgias customers with filtering and computed ticket counts
    */
   getGorgiasCustomers: publicProcedure
     .input(z.object({
@@ -252,7 +252,14 @@ export const dashboardRouter = router({
       search: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const customers = await dbService.gorgiasWarehouse.getRecentCustomers(input.limit);
+      const customersWithCounts = await dbService.gorgiasWarehouse.getRecentCustomers(input.limit);
+      
+      // Map computed counts to the expected fields
+      const customers = customersWithCounts.map(c => ({
+        ...c,
+        ticketCount: c.computedTicketCount,
+        openTicketCount: c.computedOpenTicketCount,
+      }));
       
       // Filter by search if provided
       let filtered = customers;
@@ -287,15 +294,19 @@ export const dashboardRouter = router({
         return { customer: null, tickets: [] };
       }
       
-      // Get customer's tickets
-      const allTickets = await dbService.gorgiasWarehouse.getRecentTickets(500);
-      const customerTickets = allTickets.filter(t => 
-        t.customerId === customer.id || 
-        t.customerEmail === customer.email
-      );
+      // Get customer's tickets directly from tickets table
+      const customerTickets = await dbService.gorgiasWarehouse.getTicketsByCustomerId(input.id);
+      
+      // Compute ticket counts
+      const ticketCount = customerTickets.length;
+      const openTicketCount = customerTickets.filter(t => t.status === 'open').length;
       
       return {
-        customer,
+        customer: {
+          ...customer,
+          ticketCount,
+          openTicketCount,
+        },
         tickets: customerTickets,
       };
     }),
