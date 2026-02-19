@@ -108,7 +108,7 @@ export default function SignUpPage() {
         
         {/* Footer */}
         <div className="relative z-10 text-sm text-white/60">
-          <p>&copy; 2024 TellMyTale. All rights reserved.</p>
+          <p>&copy; 2026 TellMyTale. All rights reserved.</p>
         </div>
       </div>
       
