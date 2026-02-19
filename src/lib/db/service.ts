@@ -782,12 +782,41 @@ export const gorgiasWarehouseService = {
   /**
    * Get recent tickets
    */
-  async getRecentTickets(limit = 20): Promise<GorgiasTicketRecord[]> {
-    if (!db) return [];
-    return db.select()
-      .from(gorgiasTickets)
+  /**
+   * Get tickets with pagination
+   */
+  async getTicketsPaginated(limit = 50, offset = 0, status?: 'open' | 'closed'): Promise<{
+    tickets: GorgiasTicketRecord[];
+    total: number;
+  }> {
+    if (!db) return { tickets: [], total: 0 };
+    
+    // Build query conditions
+    const conditions = status ? eq(gorgiasTickets.status, status) : undefined;
+    
+    // Get total count
+    const countQuery = conditions 
+      ? db.select({ count: count() }).from(gorgiasTickets).where(conditions)
+      : db.select({ count: count() }).from(gorgiasTickets);
+    const [countResult] = await countQuery;
+    const total = countResult?.count || 0;
+    
+    // Get tickets with pagination
+    const ticketsQuery = conditions
+      ? db.select().from(gorgiasTickets).where(conditions)
+      : db.select().from(gorgiasTickets);
+    
+    const tickets = await ticketsQuery
       .orderBy(desc(gorgiasTickets.gorgiasCreatedAt))
-      .limit(limit);
+      .limit(limit)
+      .offset(offset);
+    
+    return { tickets, total };
+  },
+
+  async getRecentTickets(limit = 20): Promise<GorgiasTicketRecord[]> {
+    const result = await this.getTicketsPaginated(limit, 0);
+    return result.tickets;
   },
 
   /**
@@ -833,18 +862,26 @@ export const gorgiasWarehouseService = {
   },
 
   /**
-   * Get recent customers with computed ticket counts
+   * Get customers with pagination and computed ticket counts
    */
-  async getRecentCustomers(limit = 20): Promise<(GorgiasCustomerRecord & { computedTicketCount: number; computedOpenTicketCount: number })[]> {
-    if (!db) return [];
+  async getCustomersPaginated(limit = 50, offset = 0): Promise<{
+    customers: (GorgiasCustomerRecord & { computedTicketCount: number; computedOpenTicketCount: number })[];
+    total: number;
+  }> {
+    if (!db) return { customers: [], total: 0 };
     
-    // Get customers
+    // Get total count
+    const [countResult] = await db.select({ count: count() }).from(gorgiasCustomers);
+    const total = countResult?.count || 0;
+    
+    // Get customers with pagination
     const customers = await db.select()
       .from(gorgiasCustomers)
       .orderBy(desc(gorgiasCustomers.gorgiasCreatedAt))
-      .limit(limit);
+      .limit(limit)
+      .offset(offset);
     
-    if (customers.length === 0) return [];
+    if (customers.length === 0) return { customers: [], total };
     
     // Get ticket counts for these customers
     const customerIds = customers.map(c => c.id);
@@ -867,11 +904,21 @@ export const gorgiasWarehouseService = {
     ]));
     
     // Enrich customers with computed counts
-    return customers.map(c => ({
+    const enrichedCustomers = customers.map(c => ({
       ...c,
       computedTicketCount: countMap.get(c.id)?.total || 0,
       computedOpenTicketCount: countMap.get(c.id)?.open || 0,
     }));
+    
+    return { customers: enrichedCustomers, total };
+  },
+
+  /**
+   * Get recent customers (legacy, for backward compatibility)
+   */
+  async getRecentCustomers(limit = 20): Promise<(GorgiasCustomerRecord & { computedTicketCount: number; computedOpenTicketCount: number })[]> {
+    const result = await this.getCustomersPaginated(limit, 0);
+    return result.customers;
   },
 
   /**

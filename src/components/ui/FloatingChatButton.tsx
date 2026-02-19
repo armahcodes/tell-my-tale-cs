@@ -151,7 +151,7 @@ export function FloatingChatButton() {
 
   return (
     <>
-      {/* Floating Button */}
+      {/* Floating Button - Fixed to bottom right corner */}
       <AnimatePresence>
         {!isOpen && (
           <motion.button
@@ -161,20 +161,21 @@ export function FloatingChatButton() {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setIsOpen(true)}
-            className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-[#1B2838] text-white rounded-full shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center group"
+            className="fixed bottom-8 right-8 z-[9999] w-14 h-14 bg-[#1B2838] text-white rounded-full shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center group"
+            style={{ position: 'fixed', bottom: '2rem', right: '2rem' }}
           >
             <MessageSquare className="w-6 h-6" />
             <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse" />
             
             {/* Tooltip */}
             <span className="absolute right-full mr-3 px-3 py-1.5 bg-gray-900 text-white text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-              Chat with AI Assistant
+              Ask Superagent
             </span>
           </motion.button>
         )}
       </AnimatePresence>
 
-      {/* Chat Window */}
+      {/* Chat Window - Anchored to bottom right */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -182,22 +183,23 @@ export function FloatingChatButton() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col ${
+            style={isExpanded ? undefined : { position: 'fixed', bottom: '2rem', right: '2rem' }}
+            className={`fixed z-[9999] bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col ${
               isExpanded
-                ? 'bottom-4 right-4 left-4 top-4 md:left-auto md:top-auto md:bottom-6 md:right-6 md:w-[500px] md:h-[700px]'
-                : 'bottom-6 right-6 w-[380px] h-[550px]'
+                ? 'bottom-4 right-4 left-4 top-4 md:left-auto md:top-auto md:bottom-8 md:right-8 md:w-[500px] md:h-[700px]'
+                : 'bottom-8 right-8 w-[380px] h-[550px]'
             }`}
           >
             {/* Header */}
             <div className="bg-[#1B2838] text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                  <Sparkles className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-sm">TellMyTale Assistant</h3>
+                  <h3 className="font-semibold text-sm">Superagent</h3>
                   <p className="text-xs text-white/70">
-                    {session?.user ? `Hi, ${session.user.name?.split(' ')[0] || 'there'}!` : 'How can I help?'}
+                    {session?.user ? `${session.user.name?.split(' ')[0]}, ask me anything` : 'Data warehouse & analytics'}
                   </p>
                 </div>
               </div>
@@ -230,16 +232,17 @@ export function FloatingChatButton() {
                     <Sparkles className="w-8 h-8 text-[#1B2838]" />
                   </div>
                   <h4 className="font-semibold text-[#1B2838] mb-2">
-                    Hi there! How can I help?
+                    TellMyTale Superagent
                   </h4>
                   <p className="text-sm text-gray-500 mb-4">
-                    Ask about orders, products, shipping, or anything else.
+                    Your AI assistant for data warehouse queries, analytics, and customer insights.
                   </p>
                   <div className="space-y-2">
                     {[
-                      'Where is my order?',
-                      'What products do you offer?',
-                      'How long does shipping take?',
+                      'Give me an executive summary',
+                      'How many open tickets do we have?',
+                      'What\'s our resolution rate?',
+                      'Show me top customers by tickets',
                     ].map((prompt) => (
                       <button
                         key={prompt}

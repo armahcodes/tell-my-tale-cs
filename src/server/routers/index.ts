@@ -11,6 +11,7 @@ import { escalationsRouter } from './escalations';
 import { notesRouter } from './notes';
 import { gorgiasRouter } from './gorgias';
 import { gorgiasWarehouseRouter } from './gorgias-warehouse';
+import { agentsRouter } from './agents';
 
 export const appRouter = router({
   shopify: shopifyRouter,
@@ -20,6 +21,7 @@ export const appRouter = router({
   notes: notesRouter,
   gorgias: gorgiasRouter,
   gorgiasWarehouse: gorgiasWarehouseRouter,
+  agents: agentsRouter,
 });
 
 // Export type for client usage

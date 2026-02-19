@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Search,
@@ -15,11 +15,15 @@ import {
   Phone,
   MessageCircle,
   Headphones,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Header } from '@/components/dashboard/Header';
 import { trpc } from '@/lib/trpc';
 import { formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
+
+const PAGE_SIZE = 50;
 
 type ConversationStatus = 'active' | 'escalated' | 'resolved' | 'closed';
 type Sentiment = 'positive' | 'neutral' | 'negative';
@@ -58,18 +62,38 @@ export default function ConversationsPage() {
   const [filter, setFilter] = useState<'all' | ConversationStatus>('all');
   const [gorgiasFilter, setGorgiasFilter] = useState<'all' | 'open' | 'closed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Reset page on filter change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, gorgiasFilter, activeTab]);
+
+  const offset = (currentPage - 1) * PAGE_SIZE;
 
   // Fetch AI conversations from database
   const statusQuery = filter === 'all' ? 'all' : filter === 'closed' ? 'all' : filter;
   const { data, isLoading, refetch } = trpc.dashboard.getConversations.useQuery({
     status: statusQuery as 'all' | 'active' | 'escalated' | 'resolved',
-    limit: 50,
+    limit: PAGE_SIZE,
+    offset,
   });
 
-  // Fetch Gorgias tickets
-  const { data: gorgiasData, isLoading: isLoadingGorgias, refetch: refetchGorgias } = trpc.dashboard.getGorgiasTickets.useQuery({
+  // Fetch Gorgias tickets with pagination
+  const { data: gorgiasData, isLoading: isLoadingGorgias, refetch: refetchGorgias, isFetching } = trpc.dashboard.getGorgiasTickets.useQuery({
     status: gorgiasFilter,
-    limit: 50,
+    limit: PAGE_SIZE,
+    offset,
   });
 
   // Fetch status counts
@@ -78,12 +102,17 @@ export default function ConversationsPage() {
 
   const conversations = data?.conversations || [];
   const gorgiasTickets = gorgiasData?.tickets || [];
+  const totalGorgiasTickets = gorgiasData?.total || 0;
   const counts = countsData?.counts || { active: 0, escalated: 0, resolved: 0, closed: 0 };
+
+  const totalPages = activeTab === 'gorgias' 
+    ? Math.ceil(totalGorgiasTickets / PAGE_SIZE)
+    : Math.ceil(conversations.length / PAGE_SIZE);
 
   // Filter locally by search query
   const filteredConversations = conversations.filter(conv => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
+    if (!debouncedSearch) return true;
+    const query = debouncedSearch.toLowerCase();
     return (
       (conv.customerName?.toLowerCase().includes(query) || false) ||
       conv.customerEmail.toLowerCase().includes(query) ||
@@ -92,8 +121,8 @@ export default function ConversationsPage() {
   });
 
   const filteredGorgiasTickets = gorgiasTickets.filter(ticket => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
+    if (!debouncedSearch) return true;
+    const query = debouncedSearch.toLowerCase();
     return (
       (ticket.customerName?.toLowerCase().includes(query) || false) ||
       (ticket.customerEmail?.toLowerCase().includes(query) || false) ||
@@ -105,6 +134,39 @@ export default function ConversationsPage() {
   const handleRefresh = () => {
     refetch();
     refetchGorgias();
+  };
+
+  // Pagination helpers
+  const goToPage = (page: number) => {
+    const maxPages = activeTab === 'gorgias' ? totalPages : 1;
+    if (page >= 1 && page <= maxPages) {
+      setCurrentPage(page);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const showPages = 5;
+    
+    if (totalPages <= showPages + 2) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      
+      if (currentPage > 3) pages.push('...');
+      
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+      
+      for (let i = start; i <= end; i++) pages.push(i);
+      
+      if (currentPage < totalPages - 2) pages.push('...');
+      
+      pages.push(totalPages);
+    }
+    
+    return pages;
   };
 
   return (
@@ -197,6 +259,12 @@ export default function ConversationsPage() {
             ))
           )}
         </div>
+
+        {isFetching && !isLoading && !isLoadingGorgias && (
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <Loader2 className="w-4 h-4 animate-spin" />
+          </div>
+        )}
       </div>
 
       {/* Stats Summary - Responsive */}
@@ -216,7 +284,7 @@ export default function ConversationsPage() {
       ) : (
         <div className="grid grid-cols-3 gap-2 md:gap-4 mb-6">
           <div className="p-3 md:p-4 rounded-lg md:rounded-xl bg-purple-50 border border-purple-100">
-            <p className="text-lg md:text-2xl font-bold text-purple-600">{statsData?.gorgiasTickets?.toLocaleString() || 0}</p>
+            <p className="text-lg md:text-2xl font-bold text-purple-600">{totalGorgiasTickets.toLocaleString()}</p>
             <p className="text-[10px] md:text-xs text-gray-500">Total Tickets</p>
           </div>
           <div className="p-3 md:p-4 rounded-lg md:rounded-xl bg-blue-50 border border-blue-100">
@@ -227,6 +295,18 @@ export default function ConversationsPage() {
             <p className="text-lg md:text-2xl font-bold text-green-600">{statsData?.gorgiasClosedTickets?.toLocaleString() || 0}</p>
             <p className="text-[10px] md:text-xs text-gray-500">Closed</p>
           </div>
+        </div>
+      )}
+
+      {/* Pagination Info */}
+      {activeTab === 'gorgias' && !isLoadingGorgias && totalGorgiasTickets > 0 && (
+        <div className="flex items-center justify-between mb-4 text-sm text-gray-600">
+          <span>
+            Showing {offset + 1}-{Math.min(offset + filteredGorgiasTickets.length, totalGorgiasTickets)} of {totalGorgiasTickets.toLocaleString()}
+          </span>
+          <span>
+            Page {currentPage} of {totalPages.toLocaleString()}
+          </span>
         </div>
       )}
 
@@ -266,7 +346,7 @@ export default function ConversationsPage() {
                   key={conversation.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
+                  transition={{ delay: Math.min(i * 0.03, 0.3) }}
                   className="bg-white rounded-xl md:rounded-2xl p-4 md:p-5 border border-gray-200 hover:shadow-md transition-all cursor-pointer group"
                 >
                   <Link href={`/dashboard/conversations/${conversation.id}`}>
@@ -339,9 +419,9 @@ export default function ConversationsPage() {
               return (
                 <motion.div
                   key={ticket.id}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(i * 0.03, 0.5) }}
+                  transition={{ delay: Math.min(i * 0.02, 0.3) }}
                   className="bg-white rounded-xl md:rounded-2xl p-4 md:p-5 border border-gray-200 hover:shadow-md transition-all group"
                 >
                   <div className="flex items-start gap-3 md:gap-4">
@@ -390,17 +470,15 @@ export default function ConversationsPage() {
                       </div>
                     </div>
 
-                    {/* Ticket ID & Link */}
+                    {/* View Ticket */}
                     <div className="flex items-center gap-2">
-                      <a
-                        href={`https://${process.env.NEXT_PUBLIC_GORGIAS_DOMAIN || 'app'}.gorgias.com/app/ticket/${ticket.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <Link
+                        href={`/dashboard/orders/${ticket.id}`}
                         className="p-1.5 md:p-2 hover:bg-purple-50 rounded-lg transition-colors"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <ArrowRight className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
-                      </a>
+                      </Link>
                     </div>
                   </div>
                 </motion.div>
@@ -409,6 +487,63 @@ export default function ConversationsPage() {
           )
         )}
       </div>
+
+      {/* Pagination Controls - Only for Gorgias tab */}
+      {activeTab === 'gorgias' && !isLoadingGorgias && totalPages > 1 && (
+        <div className="mt-8 flex items-center justify-center gap-2">
+          <button
+            onClick={() => goToPage(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+
+          <div className="flex items-center gap-1">
+            {getPageNumbers().map((page, i) => (
+              typeof page === 'number' ? (
+                <button
+                  key={i}
+                  onClick={() => goToPage(page)}
+                  className={`w-10 h-10 rounded-lg font-medium transition-colors ${
+                    currentPage === page
+                      ? 'bg-[#1B2838] text-white'
+                      : 'hover:bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  {page}
+                </button>
+              ) : (
+                <span key={i} className="px-2 text-gray-400">...</span>
+              )
+            ))}
+          </div>
+
+          <button
+            onClick={() => goToPage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+
+          {/* Jump to page */}
+          <div className="ml-4 flex items-center gap-2">
+            <span className="text-sm text-gray-500">Go to:</span>
+            <input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={currentPage}
+              onChange={(e) => {
+                const page = parseInt(e.target.value);
+                if (!isNaN(page)) goToPage(page);
+              }}
+              className="w-16 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-center focus:border-[#1B2838] focus:outline-none"
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }

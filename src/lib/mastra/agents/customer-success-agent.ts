@@ -1,4 +1,5 @@
 import { Agent } from '@mastra/core/agent';
+import { gateway } from '@ai-sdk/gateway';
 import { orderLookupTool } from '../tools/order-lookup';
 import { faqRetrievalTool } from '../tools/faq-retrieval';
 import { productInfoTool } from '../tools/product-info';
@@ -16,6 +17,12 @@ import {
   dashboardStatsTool,
   customerSearchTool,
 } from '../tools/database-lookup';
+import {
+  templateSearchTool,
+  templatesByCategoryTool,
+  applyTemplateTool,
+  recommendTemplateTool,
+} from '../tools/template-retrieval';
 
 const TELLMYTALE_SYSTEM_PROMPT = `You are the TellMyTale Customer Success Assistant, a warm and caring representative for a company that creates personalized children's books. These books are cherished gifts that celebrate the uniqueness of each child, making your role incredibly meaningful.
 
@@ -45,6 +52,35 @@ const TELLMYTALE_SYSTEM_PROMPT = `You are the TellMyTale Customer Success Assist
 8. **AI Chat History**: Look up previous conversations this customer has had with our AI assistant
 9. **Customer Search**: Search across all databases (AI chats, Gorgias, Shopify) to get a unified view of any customer
 10. **Dashboard Stats**: Access real-time support metrics and workload information
+11. **Response Templates**: Access and use pre-written response templates for consistent, professional replies
+
+## Using Response Templates
+You have access to pre-written response templates for common scenarios. Use templates to ensure consistent, professional responses:
+
+### When to Use Templates
+- Order cancellation requests (within 24h, after 24h, in production, shipped)
+- Order status inquiries (pre-push, in production, shipped, delivered)
+- Return/replacement requests (wrong book, dissatisfaction, quality issues, wrong address)
+- Revision requests (pending, in production)
+- General scenarios (greeting, closing, escalation)
+
+### Template Usage Guidelines
+1. **Use recommendTemplate** when you know the exact scenario - it returns the best template pre-filled with the customer's name
+2. **Use templateSearch** when you need to find templates matching a general query
+3. **Use applyTemplate** to fill in template variables with customer-specific information
+4. **Always personalize** - Templates are starting points, adapt the tone and add specific details
+5. **Don't read templates verbatim** - Use them as a guide, then make the response feel natural
+6. **Fill in ALL placeholders** - Replace [Customer Name], [Order Number], etc. with actual values
+
+### Template Variables
+Common variables you'll need to fill:
+- [Customer Name] - Customer's first name or full name
+- [Order Number] - Their order number
+- [Production Timeline] - Typical production time (5-7 business days)
+- [Shipping Timeline] - Typical shipping time (3-5 business days)
+- [Tracking Number] - If available from order lookup
+- [Delivery Date] - Expected or actual delivery date
+- [Discount Code] - If offering a discount (use format: CUSTOMERNAME + VIP50)
 
 ## Handling Different Scenarios
 
@@ -125,20 +161,7 @@ export const customerSuccessAgent = new Agent({
   id: 'customerSuccess',
   name: 'TellMyTale Customer Success',
   instructions: TELLMYTALE_SYSTEM_PROMPT,
-  model: [
-    {
-      model: 'vercel/openai/gpt-4o',
-      maxRetries: 2,
-    },
-    {
-      model: 'vercel/anthropic/claude-sonnet-4',
-      maxRetries: 2,
-    },
-    {
-      model: 'vercel/google/gemini-2.5-pro',
-      maxRetries: 1,
-    },
-  ],
+  model: gateway('openai/gpt-4o'),
   tools: {
     // Order & Product Tools
     orderLookup: orderLookupTool,
@@ -156,5 +179,10 @@ export const customerSuccessAgent = new Agent({
     conversationMessages: conversationMessagesTool,
     dashboardStats: dashboardStatsTool,
     customerSearch: customerSearchTool,
+    // Template Tools
+    templateSearch: templateSearchTool,
+    templatesByCategory: templatesByCategoryTool,
+    applyTemplate: applyTemplateTool,
+    recommendTemplate: recommendTemplateTool,
   },
 });

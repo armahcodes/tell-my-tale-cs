@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import {
@@ -16,33 +16,40 @@ import {
   RefreshCw,
   Clock,
   ArrowRight,
-  Filter,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Header } from '@/components/dashboard/Header';
 import { trpc } from '@/lib/trpc';
 
+const PAGE_SIZE = 50;
+
 export default function CustomersPage() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'with-tickets' | 'open-tickets'>('all');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
-  // Fetch all customers from Gorgias data warehouse
-  const { data: customersData, isLoading, refetch, isFetching } = trpc.dashboard.getGorgiasCustomers.useQuery({
-    limit: 500,
-    search: searchQuery || undefined,
-  }, {
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    staleTime: 0,
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const offset = (currentPage - 1) * PAGE_SIZE;
+
+  // Fetch customers with pagination
+  const { data, isLoading, refetch, isFetching } = trpc.dashboard.getGorgiasCustomers.useQuery({
+    limit: PAGE_SIZE,
+    offset,
+    search: debouncedSearch || undefined,
   });
 
-  const allCustomers = customersData?.customers || [];
-  
-  // Apply filters - ensure numbers
-  const customers = allCustomers.filter(c => {
-    if (filterType === 'with-tickets') return Number(c.ticketCount || 0) > 0;
-    if (filterType === 'open-tickets') return Number(c.openTicketCount || 0) > 0;
-    return true;
-  });
+  const customers = data?.customers || [];
+  const totalCustomers = data?.total || 0;
+  const totalPages = Math.ceil(totalCustomers / PAGE_SIZE);
 
   const formatDate = (dateString: string | Date | null) => {
     if (!dateString) return 'N/A';
@@ -77,74 +84,84 @@ export default function CustomersPage() {
     return customer.email || 'Unknown Customer';
   };
 
-  // Stats - ensure numbers
-  const totalCustomers = allCustomers.length;
-  const withTickets = allCustomers.filter(c => Number(c.ticketCount || 0) > 0).length;
-  const totalOpenTickets = allCustomers.reduce((sum, c) => sum + Number(c.openTicketCount || 0), 0);
-  const withEmail = allCustomers.filter(c => c.email).length;
+  // Stats from current page
+  const withTickets = customers.filter(c => Number(c.ticketCount || 0) > 0).length;
+  const totalOpenTickets = customers.reduce((sum, c) => sum + Number(c.openTicketCount || 0), 0);
+  const withEmail = customers.filter(c => c.email).length;
+
+  // Pagination helpers
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const showPages = 5;
+    
+    if (totalPages <= showPages + 2) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      
+      if (currentPage > 3) pages.push('...');
+      
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+      
+      for (let i = start; i <= end; i++) pages.push(i);
+      
+      if (currentPage < totalPages - 2) pages.push('...');
+      
+      pages.push(totalPages);
+    }
+    
+    return pages;
+  };
 
   return (
     <>
       <Header
         title="Customers"
-        subtitle={`${totalCustomers} customer profiles from Gorgias`}
+        subtitle={`${totalCustomers.toLocaleString()} customer profiles from Gorgias`}
         onRefresh={() => refetch()}
       />
 
       {/* Stats Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-        <button
-          onClick={() => setFilterType('all')}
-          className={`p-4 rounded-xl border transition-all text-left ${
-            filterType === 'all' 
-              ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-500' 
-              : 'bg-white border-gray-200 hover:border-blue-200'
-          }`}
-        >
+        <div className="p-4 rounded-xl bg-blue-50 border border-blue-100">
           <div className="flex items-center gap-2 mb-1">
             <Users className="w-4 h-4 text-blue-600" />
             <span className="text-xs text-gray-500">Total Customers</span>
           </div>
-          <p className="text-2xl font-bold text-blue-700">{totalCustomers}</p>
-        </button>
-        <button
-          onClick={() => setFilterType('with-tickets')}
-          className={`p-4 rounded-xl border transition-all text-left ${
-            filterType === 'with-tickets' 
-              ? 'bg-purple-50 border-purple-200 ring-2 ring-purple-500' 
-              : 'bg-white border-gray-200 hover:border-purple-200'
-          }`}
-        >
+          <p className="text-2xl font-bold text-blue-700">{totalCustomers.toLocaleString()}</p>
+        </div>
+        <div className="p-4 rounded-xl bg-purple-50 border border-purple-100">
           <div className="flex items-center gap-2 mb-1">
             <Ticket className="w-4 h-4 text-purple-600" />
-            <span className="text-xs text-gray-500">With Tickets</span>
+            <span className="text-xs text-gray-500">With Tickets (page)</span>
           </div>
           <p className="text-2xl font-bold text-purple-700">{withTickets}</p>
-        </button>
-        <button
-          onClick={() => setFilterType('open-tickets')}
-          className={`p-4 rounded-xl border transition-all text-left ${
-            filterType === 'open-tickets' 
-              ? 'bg-amber-50 border-amber-200 ring-2 ring-amber-500' 
-              : 'bg-white border-gray-200 hover:border-amber-200'
-          }`}
-        >
+        </div>
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-100">
           <div className="flex items-center gap-2 mb-1">
             <MessageSquare className="w-4 h-4 text-amber-600" />
-            <span className="text-xs text-gray-500">Open Tickets</span>
+            <span className="text-xs text-gray-500">Open Tickets (page)</span>
           </div>
           <p className="text-2xl font-bold text-amber-700">{totalOpenTickets}</p>
-        </button>
-        <div className="p-4 rounded-xl bg-white border border-gray-200">
+        </div>
+        <div className="p-4 rounded-xl bg-green-50 border border-green-100">
           <div className="flex items-center gap-2 mb-1">
             <Mail className="w-4 h-4 text-green-600" />
-            <span className="text-xs text-gray-500">With Email</span>
+            <span className="text-xs text-gray-500">With Email (page)</span>
           </div>
           <p className="text-2xl font-bold text-green-700">{withEmail}</p>
         </div>
       </div>
 
-      {/* Search & Filter Info */}
+      {/* Search */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -156,23 +173,23 @@ export default function CustomersPage() {
             className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 bg-white text-sm focus:border-[#1B2838] focus:ring-1 focus:ring-[#1B2838] transition-all"
           />
         </div>
-        {filterType !== 'all' && (
-          <button
-            onClick={() => setFilterType('all')}
-            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 flex items-center gap-2"
-          >
-            <Filter className="w-4 h-4" />
-            Clear filter
-          </button>
+        {isFetching && !isLoading && (
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading...
+          </div>
         )}
       </div>
 
-      {/* Filter indicator */}
-      {filterType !== 'all' && (
-        <div className="mb-4 px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 inline-flex items-center gap-2">
-          <Filter className="w-4 h-4" />
-          Showing: {filterType === 'with-tickets' ? 'Customers with tickets' : 'Customers with open tickets'}
-          <span className="font-medium">({customers.length})</span>
+      {/* Pagination Info */}
+      {!isLoading && totalCustomers > 0 && (
+        <div className="flex items-center justify-between mb-4 text-sm text-gray-600">
+          <span>
+            Showing {offset + 1}-{Math.min(offset + customers.length, totalCustomers)} of {totalCustomers.toLocaleString()}
+          </span>
+          <span>
+            Page {currentPage} of {totalPages.toLocaleString()}
+          </span>
         </div>
       )}
 
@@ -191,22 +208,20 @@ export default function CustomersPage() {
         <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
           <Users className="w-14 h-14 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-[#1B2838] mb-2">
-            {searchQuery || filterType !== 'all' ? 'No customers found' : 'No customers yet'}
+            {searchQuery ? 'No customers found' : 'No customers yet'}
           </h3>
           <p className="text-sm text-gray-500 mb-4">
             {searchQuery 
               ? 'Try adjusting your search query' 
-              : filterType !== 'all'
-                ? 'No customers match this filter'
-                : 'Customer profiles from Gorgias will appear here after syncing'}
+              : 'Customer profiles from Gorgias will appear here after syncing'}
           </p>
           <button
-            onClick={() => { setSearchQuery(''); setFilterType('all'); refetch(); }}
+            onClick={() => { setSearchQuery(''); refetch(); }}
             disabled={isFetching}
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#1B2838] text-white rounded-lg text-sm font-medium hover:bg-[#2D4A6F] transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-            {searchQuery || filterType !== 'all' ? 'Clear & Refresh' : 'Refresh'}
+            {searchQuery ? 'Clear & Refresh' : 'Refresh'}
           </button>
         </div>
       )}
@@ -217,9 +232,9 @@ export default function CustomersPage() {
           {customers.map((customer, i) => (
             <motion.div
               key={customer.id}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(i * 0.02, 0.5) }}
+              transition={{ delay: Math.min(i * 0.02, 0.3) }}
             >
               <Link
                 href={`/dashboard/customers/${customer.id}`}
@@ -239,13 +254,13 @@ export default function CustomersPage() {
                       <h3 className="font-semibold text-[#1B2838] truncate group-hover:text-purple-600 transition-colors">
                         {getDisplayName(customer)}
                       </h3>
-                      {(customer.ticketCount || 0) > 0 && (
+                      {Number(customer.ticketCount || 0) > 0 && (
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 flex items-center gap-1">
                           <Ticket className="w-3 h-3" />
                           {customer.ticketCount}
                         </span>
                       )}
-                      {(customer.openTicketCount || 0) > 0 && (
+                      {Number(customer.openTicketCount || 0) > 0 && (
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {customer.openTicketCount} open
@@ -289,13 +304,6 @@ export default function CustomersPage() {
                         )}
                       </div>
                     )}
-
-                    {/* Note preview */}
-                    {customer.note && (
-                      <div className="mt-2 p-2 bg-amber-50 rounded-lg text-xs text-amber-800 line-clamp-1">
-                        {customer.note}
-                      </div>
-                    )}
                   </div>
 
                   {/* Arrow */}
@@ -309,13 +317,60 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Results count */}
-      {!isLoading && customers.length > 0 && (
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">
-            Showing {customers.length} customer{customers.length !== 1 ? 's' : ''}
-            {filterType !== 'all' && ` (filtered from ${totalCustomers})`}
-          </p>
+      {/* Pagination Controls */}
+      {!isLoading && totalPages > 1 && (
+        <div className="mt-8 flex items-center justify-center gap-2">
+          <button
+            onClick={() => goToPage(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+
+          <div className="flex items-center gap-1">
+            {getPageNumbers().map((page, i) => (
+              typeof page === 'number' ? (
+                <button
+                  key={i}
+                  onClick={() => goToPage(page)}
+                  className={`w-10 h-10 rounded-lg font-medium transition-colors ${
+                    currentPage === page
+                      ? 'bg-[#1B2838] text-white'
+                      : 'hover:bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  {page}
+                </button>
+              ) : (
+                <span key={i} className="px-2 text-gray-400">...</span>
+              )
+            ))}
+          </div>
+
+          <button
+            onClick={() => goToPage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+
+          {/* Jump to page */}
+          <div className="ml-4 flex items-center gap-2">
+            <span className="text-sm text-gray-500">Go to:</span>
+            <input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={currentPage}
+              onChange={(e) => {
+                const page = parseInt(e.target.value);
+                if (!isNaN(page)) goToPage(page);
+              }}
+              className="w-16 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-center focus:border-[#1B2838] focus:outline-none"
+            />
+          </div>
         </div>
       )}
     </>

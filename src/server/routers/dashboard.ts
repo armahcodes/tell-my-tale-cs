@@ -71,7 +71,7 @@ export const dashboardRouter = router({
     }),
 
   /**
-   * Get Gorgias tickets with filtering
+   * Get Gorgias tickets with pagination and filtering
    */
   getGorgiasTickets: publicProcedure
     .input(z.object({
@@ -81,20 +81,54 @@ export const dashboardRouter = router({
       offset: z.number().min(0).default(0),
     }))
     .query(async ({ input }) => {
-      const tickets = await dbService.gorgiasWarehouse.getRecentTickets(input.limit);
+      const statusFilter = input.status === 'all' ? undefined : input.status;
+      const { tickets, total } = await dbService.gorgiasWarehouse.getTicketsPaginated(
+        input.limit,
+        input.offset,
+        statusFilter
+      );
       
-      // Filter by status if needed
+      // Filter by channel on results (for now)
       let filtered = tickets;
-      if (input.status !== 'all') {
-        filtered = tickets.filter(t => t.status === input.status);
-      }
       if (input.channel) {
         filtered = filtered.filter(t => t.channel === input.channel);
       }
       
       return {
         tickets: filtered,
-        hasMore: tickets.length === input.limit,
+        hasMore: input.offset + tickets.length < total,
+        total,
+        offset: input.offset,
+        limit: input.limit,
+      };
+    }),
+
+  /**
+   * Get single Gorgias ticket with all messages and details
+   */
+  getGorgiasTicketById: publicProcedure
+    .input(z.object({
+      id: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const ticket = await dbService.gorgiasWarehouse.getTicketById(input.id);
+      if (!ticket) {
+        return { ticket: null, messages: [], customer: null };
+      }
+
+      // Get all messages for this ticket
+      const messages = await dbService.gorgiasWarehouse.getTicketMessages(input.id);
+
+      // Get customer info if available
+      let customer = null;
+      if (ticket.customerId) {
+        customer = await dbService.gorgiasWarehouse.getCustomerById(ticket.customerId);
+      }
+
+      return {
+        ticket,
+        messages,
+        customer,
       };
     }),
 
@@ -243,29 +277,31 @@ export const dashboardRouter = router({
     }),
 
   /**
-   * Get Gorgias customers with filtering and computed ticket counts
+   * Get Gorgias customers with pagination and computed ticket counts
    */
   getGorgiasCustomers: publicProcedure
     .input(z.object({
-      limit: z.number().min(1).max(500).default(100),
+      limit: z.number().min(1).max(100).default(50),
       offset: z.number().min(0).default(0),
       search: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const customersWithCounts = await dbService.gorgiasWarehouse.getRecentCustomers(input.limit);
+      const { customers: customersWithCounts, total } = await dbService.gorgiasWarehouse.getCustomersPaginated(
+        input.limit,
+        input.offset
+      );
       
       // Map computed counts to the expected fields - ensure numbers
-      const customers = customersWithCounts.map(c => ({
+      let customers = customersWithCounts.map(c => ({
         ...c,
         ticketCount: Number(c.computedTicketCount) || 0,
         openTicketCount: Number(c.computedOpenTicketCount) || 0,
       }));
       
-      // Filter by search if provided
-      let filtered = customers;
+      // Filter by search if provided (client-side for this page)
       if (input.search) {
         const search = input.search.toLowerCase();
-        filtered = customers.filter(c => 
+        customers = customers.filter(c => 
           c.email?.toLowerCase().includes(search) ||
           c.name?.toLowerCase().includes(search) ||
           c.firstname?.toLowerCase().includes(search) ||
@@ -274,9 +310,11 @@ export const dashboardRouter = router({
       }
       
       return {
-        customers: filtered,
-        hasMore: customers.length === input.limit,
-        total: customers.length,
+        customers,
+        hasMore: input.offset + customers.length < total,
+        total,
+        offset: input.offset,
+        limit: input.limit,
       };
     }),
 

@@ -16,9 +16,13 @@ import {
   Settings,
   LogOut,
   Sparkles,
-  Bell,
   X,
   Loader2,
+  RefreshCw,
+  HelpCircle,
+  User,
+  Play,
+  Building2,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { authClient } from '@/lib/auth/client';
@@ -31,8 +35,15 @@ const navItems = [
   { icon: Ticket, label: 'Tickets', href: '/dashboard/orders' },
   { icon: Users, label: 'Customers', href: '/dashboard/customers' },
   { icon: BarChart3, label: 'Analytics', href: '/dashboard/analytics' },
-  { icon: Sparkles, label: 'Test Chat', href: '/dashboard/chat' },
+  { icon: Sparkles, label: 'AI Agents', href: '/dashboard/agents' },
+  { icon: Play, label: 'Playground', href: '/dashboard/agents/playground' },
+  { icon: RefreshCw, label: 'Data Sync', href: '/dashboard/sync' },
+];
+
+const secondaryNavItems = [
+  { icon: Building2, label: 'Team', href: '/dashboard/team' },
   { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
+  { icon: HelpCircle, label: 'Help', href: '/dashboard/help' },
 ];
 
 interface User {
@@ -58,8 +69,15 @@ export function Sidebar({ onClose, user }: SidebarProps) {
     refetchInterval: 30000,
   });
 
+  // Get warehouse sync status
+  const { data: warehouseStatus } = trpc.gorgiasWarehouse.status.useQuery(undefined, {
+    refetchInterval: 60000,
+  });
+
   const activeNow = stats?.activeNow || 0;
   const aiResolutionRate = stats?.aiResolutionRate || 0;
+  const syncConfigured = warehouseStatus?.configured || false;
+  const syncAvailable = warehouseStatus?.available || false;
 
   // Get user initials
   const getUserInitials = () => {
@@ -140,6 +158,36 @@ export function Sidebar({ onClose, user }: SidebarProps) {
                   {activeNow}
                 </span>
               )}
+              {item.label === 'Data Sync' && (
+                <span className={`ml-auto w-2 h-2 rounded-full ${
+                  !syncConfigured ? 'bg-amber-500' : syncAvailable ? 'bg-green-500' : 'bg-gray-400'
+                }`} title={!syncConfigured ? 'Not configured' : syncAvailable ? 'Connected' : 'Unavailable'} />
+              )}
+            </Link>
+          );
+        })}
+
+        {/* Divider */}
+        <div className="my-3 border-t border-gray-200" />
+
+        {/* Secondary Navigation */}
+        {secondaryNavItems.map((item) => {
+          const isActive = pathname === item.href || 
+            (item.href !== '/dashboard' && pathname.startsWith(item.href));
+          
+          return (
+            <Link
+              key={item.label}
+              href={item.href}
+              onClick={onClose}
+              className={`flex items-center gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg transition-all duration-200 ${
+                isActive 
+                  ? 'bg-[#1B2838] text-white' 
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-[#1B2838]'
+              }`}
+            >
+              <item.icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-500'}`} />
+              <span className="font-medium text-sm md:text-base">{item.label}</span>
             </Link>
           );
         })}
@@ -179,7 +227,11 @@ export function Sidebar({ onClose, user }: SidebarProps) {
 
       {/* User & Sign Out */}
       <div className="p-3 md:p-4 border-t border-gray-200">
-        <div className="flex items-center gap-3 mb-3 md:mb-4">
+        <Link
+          href="/dashboard/profile"
+          onClick={onClose}
+          className="flex items-center gap-3 mb-3 md:mb-4 p-2 -mx-2 rounded-lg hover:bg-gray-50 transition-colors"
+        >
           {user?.image ? (
             <img 
               src={user.image} 
@@ -195,10 +247,8 @@ export function Sidebar({ onClose, user }: SidebarProps) {
             <p className="font-medium text-xs md:text-sm text-[#1B2838] truncate">{getDisplayName()}</p>
             <p className="text-[10px] md:text-xs text-gray-500 truncate">{user?.email || 'Admin'}</p>
           </div>
-          <button className="p-1.5 md:p-2 rounded-lg hover:bg-gray-100 transition-colors relative">
-            <Bell className="w-4 h-4 md:w-5 md:h-5 text-gray-500" />
-          </button>
-        </div>
+          <User className="w-4 h-4 text-gray-400" />
+        </Link>
         <button 
           onClick={handleSignOut}
           disabled={isSigningOut}

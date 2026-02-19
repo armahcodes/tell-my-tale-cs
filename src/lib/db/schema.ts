@@ -17,6 +17,10 @@ export const user = pgTable('user', {
   email: text('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
+  role: text('role').default('user'),
+  banned: boolean('banned').default(false),
+  banReason: text('ban_reason'),
+  banExpires: timestamp('ban_expires'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -28,6 +32,8 @@ export const session = pgTable('session', {
   expiresAt: timestamp('expires_at').notNull(),
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
+  activeOrganizationId: text('active_organization_id'),
+  impersonatedBy: text('impersonated_by'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -56,10 +62,100 @@ export const verification = pgTable('verification', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
+// ============================================
+// Better Auth Organization Tables
+// Documentation: https://www.better-auth.com/docs/plugins/organization
+// ============================================
+
+export const organization = pgTable('organization', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  slug: text('slug').notNull().unique(),
+  logo: text('logo'),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const member = pgTable('member', {
+  id: text('id').primaryKey(),
+  organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  role: text('role').notNull().default('member'),
+  teamId: text('team_id').references(() => team.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const invitation = pgTable('invitation', {
+  id: text('id').primaryKey(),
+  organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
+  email: text('email').notNull(),
+  role: text('role').notNull().default('member'),
+  status: text('status').notNull().default('pending'),
+  expiresAt: timestamp('expires_at').notNull(),
+  inviterId: text('inviter_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  teamId: text('team_id').references(() => team.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const team = pgTable('team', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// Organization Relations
+export const organizationRelations = relations(organization, ({ many }) => ({
+  members: many(member),
+  invitations: many(invitation),
+  teams: many(team),
+}));
+
+export const memberRelations = relations(member, ({ one }) => ({
+  organization: one(organization, {
+    fields: [member.organizationId],
+    references: [organization.id],
+  }),
+  user: one(user, {
+    fields: [member.userId],
+    references: [user.id],
+  }),
+  team: one(team, {
+    fields: [member.teamId],
+    references: [team.id],
+  }),
+}));
+
+export const invitationRelations = relations(invitation, ({ one }) => ({
+  organization: one(organization, {
+    fields: [invitation.organizationId],
+    references: [organization.id],
+  }),
+  inviter: one(user, {
+    fields: [invitation.inviterId],
+    references: [user.id],
+  }),
+  team: one(team, {
+    fields: [invitation.teamId],
+    references: [team.id],
+  }),
+}));
+
+export const teamRelations = relations(team, ({ one, many }) => ({
+  organization: one(organization, {
+    fields: [team.organizationId],
+    references: [organization.id],
+  }),
+  members: many(member),
+}));
+
 // Better Auth Relations
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
+  members: many(member),
+  invitations: many(invitation),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -614,6 +710,156 @@ export const escalationsRelations = relations(escalations, ({ one }) => ({
 }));
 
 // ============================================
+// Response Templates
+// ============================================
+export const responseTemplates = pgTable('response_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  
+  // Template identification
+  name: varchar('name', { length: 255 }).notNull(),
+  category: varchar('category', { length: 100 }).notNull(), // order_cancellation, order_status, returns, revisions
+  subcategory: varchar('subcategory', { length: 100 }), // within_24h, after_24h, in_production, shipped, etc.
+  
+  // Template content
+  subject: varchar('subject', { length: 500 }), // For email templates
+  body: text('body').notNull(),
+  
+  // Variables available in this template
+  variables: jsonb('variables').$type<string[]>().default([]), // e.g., ['customer_name', 'order_number', 'tracking_link']
+  
+  // Metadata
+  tags: jsonb('tags').$type<string[]>().default([]),
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').default(0),
+  
+  // Usage stats
+  usageCount: integer('usage_count').default(0),
+  lastUsedAt: timestamp('last_used_at'),
+  
+  // Audit
+  createdBy: text('created_by'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// ============================================
+// AI Agents Configuration
+// ============================================
+export const aiAgents = pgTable('ai_agents', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  
+  // Agent identity
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  avatar: text('avatar'), // URL or emoji
+  
+  // Configuration
+  model: varchar('model', { length: 100 }).notNull().default('gpt-4o'), // gpt-4o, claude-sonnet-4, etc.
+  fallbackModels: jsonb('fallback_models').$type<string[]>().default([]),
+  temperature: real('temperature').default(0.7),
+  maxTokens: integer('max_tokens').default(1000),
+  
+  // Personality and behavior
+  systemPrompt: text('system_prompt'),
+  personality: varchar('personality', { length: 50 }).default('friendly'), // friendly, professional, casual
+  responseLength: varchar('response_length', { length: 50 }).default('balanced'), // concise, balanced, detailed
+  
+  // Capabilities
+  capabilities: jsonb('capabilities').$type<string[]>().default([]), // e.g., ['order_lookup', 'faq', 'escalation']
+  allowedTools: jsonb('allowed_tools').$type<string[]>().default([]),
+  
+  // Routing rules
+  routingPriority: integer('routing_priority').default(1),
+  routingConditions: jsonb('routing_conditions').$type<{
+    channels?: string[];
+    categories?: string[];
+    keywords?: string[];
+    customerTags?: string[];
+  }>(),
+  
+  // Status
+  isActive: boolean('is_active').notNull().default(true),
+  isPrimary: boolean('is_primary').notNull().default(false),
+  
+  // Stats
+  totalConversations: integer('total_conversations').default(0),
+  resolvedConversations: integer('resolved_conversations').default(0),
+  avgResponseTime: real('avg_response_time'),
+  avgSatisfactionScore: real('avg_satisfaction_score'),
+  
+  // Audit
+  createdBy: text('created_by'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// ============================================
+// Agent Template Associations
+// ============================================
+export const agentTemplates = pgTable('agent_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: uuid('agent_id').notNull().references(() => aiAgents.id, { onDelete: 'cascade' }),
+  templateId: uuid('template_id').notNull().references(() => responseTemplates.id, { onDelete: 'cascade' }),
+  priority: integer('priority').default(0), // Higher = preferred
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// ============================================
+// Agent Activity Logs
+// ============================================
+export const agentActivityLogs = pgTable('agent_activity_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: uuid('agent_id').references(() => aiAgents.id, { onDelete: 'set null' }),
+  conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+  
+  // Activity details
+  activityType: varchar('activity_type', { length: 50 }).notNull(), // response, tool_call, escalation, template_used
+  details: jsonb('details').$type<Record<string, unknown>>(),
+  
+  // Performance
+  responseTimeMs: integer('response_time_ms'),
+  tokensUsed: integer('tokens_used'),
+  
+  // Outcome
+  success: boolean('success').default(true),
+  errorMessage: text('error_message'),
+  
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Agent Relations
+export const aiAgentsRelations = relations(aiAgents, ({ many }) => ({
+  agentTemplates: many(agentTemplates),
+  activityLogs: many(agentActivityLogs),
+}));
+
+export const responseTemplatesRelations = relations(responseTemplates, ({ many }) => ({
+  agentTemplates: many(agentTemplates),
+}));
+
+export const agentTemplatesRelations = relations(agentTemplates, ({ one }) => ({
+  agent: one(aiAgents, {
+    fields: [agentTemplates.agentId],
+    references: [aiAgents.id],
+  }),
+  template: one(responseTemplates, {
+    fields: [agentTemplates.templateId],
+    references: [responseTemplates.id],
+  }),
+}));
+
+export const agentActivityLogsRelations = relations(agentActivityLogs, ({ one }) => ({
+  agent: one(aiAgents, {
+    fields: [agentActivityLogs.agentId],
+    references: [aiAgents.id],
+  }),
+  conversation: one(conversations, {
+    fields: [agentActivityLogs.conversationId],
+    references: [conversations.id],
+  }),
+}));
+
+// ============================================
 // Types
 // ============================================
 
@@ -626,6 +872,16 @@ export type Account = typeof account.$inferSelect;
 export type NewAccount = typeof account.$inferInsert;
 export type Verification = typeof verification.$inferSelect;
 export type NewVerification = typeof verification.$inferInsert;
+
+// Organization Types
+export type Organization = typeof organization.$inferSelect;
+export type NewOrganization = typeof organization.$inferInsert;
+export type Member = typeof member.$inferSelect;
+export type NewMember = typeof member.$inferInsert;
+export type Invitation = typeof invitation.$inferSelect;
+export type NewInvitation = typeof invitation.$inferInsert;
+export type Team = typeof team.$inferSelect;
+export type NewTeam = typeof team.$inferInsert;
 
 // Application Types
 export type Conversation = typeof conversations.$inferSelect;
@@ -658,3 +914,13 @@ export type GorgiasSyncLog = typeof gorgiasSyncLogs.$inferSelect;
 export type NewGorgiasSyncLog = typeof gorgiasSyncLogs.$inferInsert;
 export type GorgiasSyncCursor = typeof gorgiasSyncCursors.$inferSelect;
 export type NewGorgiasSyncCursor = typeof gorgiasSyncCursors.$inferInsert;
+
+// Response Templates & Agent Types
+export type ResponseTemplate = typeof responseTemplates.$inferSelect;
+export type NewResponseTemplate = typeof responseTemplates.$inferInsert;
+export type AIAgent = typeof aiAgents.$inferSelect;
+export type NewAIAgent = typeof aiAgents.$inferInsert;
+export type AgentTemplate = typeof agentTemplates.$inferSelect;
+export type NewAgentTemplate = typeof agentTemplates.$inferInsert;
+export type AgentActivityLog = typeof agentActivityLogs.$inferSelect;
+export type NewAgentActivityLog = typeof agentActivityLogs.$inferInsert;

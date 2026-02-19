@@ -1,8 +1,19 @@
-import { mastra } from '@/lib/mastra';
+/**
+ * Production Chat API
+ * High-performance streaming endpoint with resilience and observability
+ * 
+ * Features:
+ * - Automatic retry with exponential backoff
+ * - Request queuing for high concurrency
+ * - Real-time metrics collection
+ * - Graceful degradation
+ */
+
 import { NextRequest } from 'next/server';
 import { dbService } from '@/lib/db/service';
 import { auth } from '@/lib/auth/auth';
 import { headers } from 'next/headers';
+import { agentManager, getObservabilityService } from '@/lib/mastra';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -18,9 +29,15 @@ interface ChatRequestBody {
   customerEmail?: string;
   customerName?: string;
   orderNumber?: string;
+  channel?: string;
+  category?: string;
+  useWorkflow?: boolean;
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
 }
 
 export async function POST(req: NextRequest) {
+  const observability = getObservabilityService();
+  
   try {
     // Get authenticated session (optional - allows both authenticated and guest users)
     let session = null;
@@ -33,7 +50,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body: ChatRequestBody = await req.json();
-    const { messages, conversationId, orderNumber } = body;
+    const { messages, conversationId, orderNumber, channel, useWorkflow, priority } = body;
     
     // Use authenticated user info if available, otherwise use provided info
     const customerEmail = session?.user?.email || body.customerEmail;
@@ -59,31 +76,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const agent = mastra.getAgent('customerSuccess');
-    
-    if (!agent) {
-      return new Response(
-        JSON.stringify({ error: 'Agent not found' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Create or get conversation if email is provided
     let currentConversationId = conversationId;
     
     if (customerEmail && !currentConversationId && dbService.isAvailable()) {
-      // Create a new conversation
       const conversation = await dbService.conversations.create({
         customerEmail,
         customerName,
         orderNumber,
-        channel: isAuthenticated ? 'authenticated_chat' : 'web_chat',
+        channel: channel || (isAuthenticated ? 'authenticated_chat' : 'web_chat'),
         status: 'active',
       });
       
       if (conversation) {
         currentConversationId = conversation.id;
-        // Increment today's stats
         await dbService.stats.incrementConversationCount();
       }
     }
@@ -98,50 +104,50 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Build context for authenticated users
-    const userContext = isAuthenticated && customerEmail
-      ? `[System Context: The customer "${customerName || 'User'}" is logged in with email ${customerEmail}. They are an authenticated user, so you can look up their orders directly using their email.]`
-      : customerEmail
-        ? `[System Context: Customer email: ${customerEmail}${customerName ? `, Name: ${customerName}` : ''}]`
-        : '';
-
-    // Format messages for the agent with user context
-    const formattedMessages = [
-      ...(userContext ? [{
-        role: 'system' as const,
-        content: userContext,
-      }] : []),
-      ...messages.map((msg: ChatMessage) => ({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content,
-      })),
-    ];
+    // Build conversation history for agent
+    const conversationHistory = messages.slice(0, -1).map(msg => ({
+      role: msg.role,
+      content: msg.content,
+    }));
 
     try {
-      // Stream the response using Mastra agent
-      // Cast to satisfy Mastra's MessageListInput type
-      const result = await agent.stream(formattedMessages as Parameters<typeof agent.stream>[0]);
-      
-      // Get the text stream from the result
-      const textStream = result.textStream;
+      // Use the production agent manager for streaming
+      const streamResponse = await agentManager.processStream({
+        message: lastUserMessage.content,
+        conversationHistory,
+        customerEmail,
+        customerName,
+        conversationId: currentConversationId,
+        orderNumber,
+        channel: channel || (isAuthenticated ? 'authenticated_chat' : 'web_chat'),
+        priority: priority || (isAuthenticated ? 'high' : 'medium'),
+        useWorkflow: useWorkflow ?? true, // Enable workflow by default
+      });
+
+      // Create wrapper stream to save response to database
       const encoder = new TextEncoder();
-      
-      // Collect full response for database storage
+      const decoder = new TextDecoder();
       let fullResponse = '';
-      
-      // Create a web-compatible ReadableStream
-      const webStream = new ReadableStream({
+
+      const wrappedStream = new ReadableStream({
         async start(controller) {
           try {
-            const reader = textStream.getReader();
+            const reader = streamResponse.stream.getReader();
+            
             while (true) {
               const { done, value } = await reader.read();
-              if (done) break;
+              
+              if (done) {
+                break;
+              }
+              
               if (value) {
-                fullResponse += value;
-                controller.enqueue(encoder.encode(value));
+                const text = decoder.decode(value, { stream: true });
+                fullResponse += text;
+                controller.enqueue(value);
               }
             }
+            
             controller.close();
             
             // Save assistant response to database after stream completes
@@ -153,30 +159,31 @@ export async function POST(req: NextRequest) {
               });
             }
           } catch (error) {
-            console.error('Stream error:', error);
+            console.error('[Chat API] Stream error:', error);
             controller.error(error);
           }
         },
       });
       
-      // Return the stream as a response with conversation ID in header
-      const headers: HeadersInit = {
+      // Build response headers
+      const responseHeaders: HeadersInit = {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
+        'X-Request-Id': streamResponse.requestId,
+        'X-Agent-Name': streamResponse.agentName,
       };
       
-      if (currentConversationId) {
-        headers['X-Conversation-Id'] = currentConversationId;
+      if (streamResponse.conversationId) {
+        responseHeaders['X-Conversation-Id'] = streamResponse.conversationId;
       }
       
-      return new Response(webStream, { headers });
+      return new Response(wrappedStream, { headers: responseHeaders });
+      
     } catch (streamError) {
-      console.error('Upstream LLM API error from openai (model: gpt-4o)', { 
+      console.error('[Chat API] Streaming error:', {
         error: streamError,
         runId: crypto.randomUUID(),
-        provider: 'openai',
-        modelId: 'gpt-4o'
       });
       
       const errorMessage = streamError instanceof Error ? streamError.message : String(streamError);
@@ -186,13 +193,13 @@ export async function POST(req: NextRequest) {
         return new Response(
           JSON.stringify({ 
             error: 'Invalid AI Gateway API key',
-            details: 'Check that your AI_GATEWAY_API_KEY is valid in Vercel project settings'
+            details: 'Check that your API keys are valid'
           }),
           { status: 401, headers: { 'Content-Type': 'application/json' } }
         );
       }
       
-      if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
+      if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit') || errorMessage.includes('429')) {
         return new Response(
           JSON.stringify({ 
             error: 'Rate limit exceeded',
@@ -202,11 +209,11 @@ export async function POST(req: NextRequest) {
         );
       }
       
-      if (errorMessage.includes('TLS') || errorMessage.includes('ECONNRESET') || errorMessage.includes('network') || errorMessage.includes('socket')) {
+      if (errorMessage.includes('TLS') || errorMessage.includes('ECONNRESET') || errorMessage.includes('network') || errorMessage.includes('socket') || errorMessage.includes('timeout')) {
         return new Response(
           JSON.stringify({ 
             error: 'Connection error',
-            details: 'Could not connect to OpenAI. Please try again.'
+            details: 'Could not connect to AI service. Please try again.'
           }),
           { status: 503, headers: { 'Content-Type': 'application/json' } }
         );
@@ -215,13 +222,51 @@ export async function POST(req: NextRequest) {
       throw streamError;
     }
   } catch (error) {
-    console.error('Chat API Error:', error);
+    console.error('[Chat API] Error:', error);
     return new Response(
       JSON.stringify({ 
         error: 'An error occurred while processing your request',
         details: error instanceof Error ? error.message : 'Unknown error'
       }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+/**
+ * Health check endpoint
+ */
+export async function GET() {
+  try {
+    const health = await agentManager.getHealth();
+    const metrics = agentManager.getMetrics();
+    
+    return new Response(
+      JSON.stringify({
+        status: health.status,
+        components: health.components,
+        metrics: {
+          requestsPerMinute: metrics.system.requestsPerMinute,
+          avgLatencyMs: Math.round(metrics.system.avgLatencyMs),
+          p95LatencyMs: Math.round(metrics.system.p95LatencyMs),
+          successRate: `${(metrics.system.successRate * 100).toFixed(1)}%`,
+          activeStreams: metrics.streaming.activeStreams,
+          queuedRequests: metrics.queue.currentQueueSize,
+        },
+        alerts: metrics.alerts.length,
+      }),
+      {
+        status: health.status === 'healthy' ? 200 : health.status === 'degraded' ? 200 : 503,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({
+        status: 'unhealthy',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }

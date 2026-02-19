@@ -4,11 +4,29 @@
  * Modern authentication for Next.js applications.
  * Documentation: https://www.better-auth.com/docs
  * 
+ * Features:
+ * - Email/Password authentication
+ * - Organization management (teams, members, invitations)
+ * - Admin user management
+ * 
  * Note: For server-side utilities, import from '@/lib/auth/server' directly.
  */
 
 // Client-side methods
-export { authClient, signIn, signUp, signOut, getSession, getCurrentUser } from './client';
+export { 
+  authClient, 
+  signIn, 
+  signUp, 
+  signOut, 
+  getSession, 
+  getCurrentUser,
+  // Organization methods
+  organization,
+  useActiveOrganization,
+  useListOrganizations,
+  // Admin methods
+  admin,
+} from './client';
 
 // Provider
 export { AuthProvider } from './provider';

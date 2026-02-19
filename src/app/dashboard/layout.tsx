@@ -10,6 +10,8 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/dashboard/Sidebar';
 import { FloatingChatButton } from '@/components/ui/FloatingChatButton';
+import { GlobalSearch } from '@/components/dashboard/GlobalSearch';
+import { NotificationCenter } from '@/components/dashboard/NotificationCenter';
 import { Menu, X, Loader2 } from 'lucide-react';
 import { useSession } from '@/lib/auth/use-auth';
 import { useRouter } from 'next/navigation';
@@ -58,12 +60,16 @@ export default function DashboardLayout({
             className="h-8 w-auto"
           />
         </div>
-        <button 
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="p-2 text-[#1B2838] hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
+        <div className="flex items-center gap-2">
+          <GlobalSearch />
+          <NotificationCenter />
+          <button 
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 text-[#1B2838] hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile Sidebar Overlay */}
@@ -85,12 +91,18 @@ export default function DashboardLayout({
 
       {/* Main Content */}
       <main className="flex-1 pt-16 lg:pt-0 min-h-screen">
+        {/* Desktop Top Bar */}
+        <div className="hidden lg:flex items-center justify-end gap-3 px-8 py-4 border-b border-gray-200 bg-white">
+          <GlobalSearch />
+          <NotificationCenter />
+        </div>
+        
         <div className="p-4 md:p-6 lg:p-8">
           {children}
         </div>
       </main>
 
-      {/* Floating Chat Button - Bottom Right */}
+      {/* Floating Chat Button - Bottom Right (rendered at document level) */}
       <FloatingChatButton />
     </div>
   );

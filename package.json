@@ -13,6 +13,9 @@
     "@ai-sdk/openai": "^3.0.29",
     "@mastra/ai-sdk": "beta",
     "@mastra/core": "^1.4.0",
+    "@mastra/evals": "^1.1.2",
+    "@mastra/memory": "^1.4.0",
+    "@mastra/pg": "^1.5.0",
     "@nanostores/react": "^1.0.0",
     "@neondatabase/auth": "^0.1.0-beta.21",
     "@neondatabase/neon-js": "^0.1.0-beta.22",
@@ -25,6 +28,7 @@
     "@trpc/server": "^11.8.1",
     "ai": "^6.0.90",
     "better-auth": "^1.4.18",
+    "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "drizzle-kit": "^0.31.8",
     "drizzle-orm": "^0.45.1",
@@ -36,6 +40,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "superjson": "^2.2.6",
+    "tailwind-merge": "^3.5.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

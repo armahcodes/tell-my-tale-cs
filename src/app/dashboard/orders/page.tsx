@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Search,
   Clock,
   User,
   Loader2,
-  ExternalLink,
+  ArrowRight,
   Mail,
   Phone,
   MessageCircle,
@@ -15,9 +15,14 @@ import {
   CheckCircle,
   Ticket,
   RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
+import Link from 'next/link';
 import { trpc } from '@/lib/trpc';
 import { Header } from '@/components/dashboard/Header';
+
+const PAGE_SIZE = 50;
 
 const statusColors: Record<string, { bg: string; text: string }> = {
   open: { bg: 'bg-amber-50', text: 'text-amber-700' },
@@ -40,29 +45,46 @@ const channelColors: Record<string, string> = {
 
 export default function TicketsPage() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter]);
+
+  const offset = (currentPage - 1) * PAGE_SIZE;
 
   // Fetch Gorgias tickets from data warehouse
-  const { data: ticketsData, isLoading, refetch, isFetching } = trpc.dashboard.getGorgiasTickets.useQuery({
+  const { data, isLoading, refetch, isFetching } = trpc.dashboard.getGorgiasTickets.useQuery({
     status: statusFilter,
-    limit: 100,
-  }, {
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    staleTime: 0,
+    limit: PAGE_SIZE,
+    offset,
   });
 
-  const tickets = ticketsData?.tickets || [];
+  const allTickets = data?.tickets || [];
+  const totalTickets = data?.total || 0;
+  const totalPages = Math.ceil(totalTickets / PAGE_SIZE);
 
-  // Filter tickets by search
-  const filteredTickets = searchQuery
-    ? tickets.filter(t => 
-        t.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.customerEmail?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.id?.toString().includes(searchQuery)
+  // Filter tickets by search (client-side)
+  const tickets = debouncedSearch
+    ? allTickets.filter(t => 
+        t.subject?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        t.customerEmail?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        t.customerName?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        t.id?.toString().includes(debouncedSearch)
       )
-    : tickets;
+    : allTickets;
 
   const formatDate = (dateString: string | Date | null) => {
     if (!dateString) return 'N/A';
@@ -90,17 +112,48 @@ export default function TicketsPage() {
     return formatDate(dateString);
   };
 
-  // Stats
+  // Stats for current page
   const openCount = tickets.filter(t => t.status === 'open').length;
   const closedCount = tickets.filter(t => t.status === 'closed').length;
   const emailCount = tickets.filter(t => t.channel === 'email').length;
-  const chatCount = tickets.filter(t => t.channel === 'chat').length;
+
+  // Pagination helpers
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const showPages = 5;
+    
+    if (totalPages <= showPages + 2) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      
+      if (currentPage > 3) pages.push('...');
+      
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+      
+      for (let i = start; i <= end; i++) pages.push(i);
+      
+      if (currentPage < totalPages - 2) pages.push('...');
+      
+      pages.push(totalPages);
+    }
+    
+    return pages;
+  };
 
   return (
     <>
       <Header
         title="Support Tickets"
-        subtitle="View and manage customer support tickets from Gorgias"
+        subtitle={`${totalTickets.toLocaleString()} tickets from Gorgias`}
         onRefresh={() => refetch()}
       />
 
@@ -111,26 +164,26 @@ export default function TicketsPage() {
             <Ticket className="w-4 h-4 text-blue-600" />
             <span className="text-xs text-gray-500">Total Tickets</span>
           </div>
-          <p className="text-2xl font-bold text-blue-700">{tickets.length}</p>
+          <p className="text-2xl font-bold text-blue-700">{totalTickets.toLocaleString()}</p>
         </div>
         <div className="p-4 rounded-xl bg-amber-50 border border-amber-100">
           <div className="flex items-center gap-2 mb-1">
             <Clock className="w-4 h-4 text-amber-600" />
-            <span className="text-xs text-gray-500">Open</span>
+            <span className="text-xs text-gray-500">Open (page)</span>
           </div>
           <p className="text-2xl font-bold text-amber-700">{openCount}</p>
         </div>
         <div className="p-4 rounded-xl bg-green-50 border border-green-100">
           <div className="flex items-center gap-2 mb-1">
             <CheckCircle className="w-4 h-4 text-green-600" />
-            <span className="text-xs text-gray-500">Closed</span>
+            <span className="text-xs text-gray-500">Closed (page)</span>
           </div>
           <p className="text-2xl font-bold text-green-700">{closedCount}</p>
         </div>
         <div className="p-4 rounded-xl bg-purple-50 border border-purple-100">
           <div className="flex items-center gap-2 mb-1">
             <Mail className="w-4 h-4 text-purple-600" />
-            <span className="text-xs text-gray-500">Email Channel</span>
+            <span className="text-xs text-gray-500">Email (page)</span>
           </div>
           <p className="text-2xl font-bold text-purple-700">{emailCount}</p>
         </div>
@@ -163,7 +216,25 @@ export default function TicketsPage() {
             </button>
           ))}
         </div>
+        {isFetching && !isLoading && (
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading...
+          </div>
+        )}
       </div>
+
+      {/* Pagination Info */}
+      {!isLoading && totalTickets > 0 && (
+        <div className="flex items-center justify-between mb-4 text-sm text-gray-600">
+          <span>
+            Showing {offset + 1}-{Math.min(offset + tickets.length, totalTickets)} of {totalTickets.toLocaleString()}
+          </span>
+          <span>
+            Page {currentPage} of {totalPages.toLocaleString()}
+          </span>
+        </div>
+      )}
 
       {/* Loading State */}
       {isLoading && (
@@ -176,19 +247,17 @@ export default function TicketsPage() {
       )}
 
       {/* Tickets List */}
-      {!isLoading && filteredTickets.length > 0 && (
+      {!isLoading && tickets.length > 0 && (
         <div className="space-y-3 mb-8">
-          {filteredTickets.map((ticket, i) => (
+          {tickets.map((ticket, i) => (
             <motion.div
               key={ticket.id}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.02 }}
+              transition={{ delay: Math.min(i * 0.02, 0.3) }}
             >
-              <a
-                href={`https://${process.env.NEXT_PUBLIC_GORGIAS_DOMAIN || 'tellmytale'}.gorgias.com/app/ticket/${ticket.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href={`/dashboard/orders/${ticket.id}`}
                 className="block bg-white rounded-2xl p-5 border border-gray-200 hover:shadow-lg hover:border-gray-300 transition-all group"
               >
                 <div className="flex items-start gap-4">
@@ -212,7 +281,7 @@ export default function TicketsPage() {
                       </span>
                     </div>
 
-                    <h3 className="font-semibold text-[#1B2838] mb-2 line-clamp-1 group-hover:text-blue-600 transition-colors">
+                    <h3 className="font-semibold text-[#1B2838] mb-2 line-clamp-1 group-hover:text-purple-600 transition-colors">
                       {ticket.subject || 'No subject'}
                     </h3>
 
@@ -236,19 +305,19 @@ export default function TicketsPage() {
                     </div>
                   </div>
 
-                  {/* External Link Icon */}
+                  {/* Arrow Icon */}
                   <div className="p-2 hover:bg-gray-100 rounded-lg transition-colors opacity-0 group-hover:opacity-100">
-                    <ExternalLink className="w-5 h-5 text-[#1B2838]" />
+                    <ArrowRight className="w-5 h-5 text-[#1B2838]" />
                   </div>
                 </div>
-              </a>
+              </Link>
             </motion.div>
           ))}
         </div>
       )}
 
       {/* Empty State */}
-      {!isLoading && filteredTickets.length === 0 && (
+      {!isLoading && tickets.length === 0 && (
         <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
           <Headphones className="w-14 h-14 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-[#1B2838] mb-2">
@@ -260,22 +329,70 @@ export default function TicketsPage() {
               : 'Support tickets from Gorgias will appear here after syncing'}
           </p>
           <button
-            onClick={() => refetch()}
+            onClick={() => { setSearchQuery(''); setStatusFilter('all'); refetch(); }}
             disabled={isFetching}
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#1B2838] text-white rounded-lg text-sm font-medium hover:bg-[#2D4A6F] transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-            Refresh
+            {searchQuery || statusFilter !== 'all' ? 'Clear & Refresh' : 'Refresh'}
           </button>
         </div>
       )}
 
-      {/* Pagination Info */}
-      {ticketsData?.hasMore && (
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">
-            Showing {filteredTickets.length} of {tickets.length} tickets
-          </p>
+      {/* Pagination Controls */}
+      {!isLoading && totalPages > 1 && (
+        <div className="mt-8 flex items-center justify-center gap-2">
+          <button
+            onClick={() => goToPage(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+
+          <div className="flex items-center gap-1">
+            {getPageNumbers().map((page, i) => (
+              typeof page === 'number' ? (
+                <button
+                  key={i}
+                  onClick={() => goToPage(page)}
+                  className={`w-10 h-10 rounded-lg font-medium transition-colors ${
+                    currentPage === page
+                      ? 'bg-[#1B2838] text-white'
+                      : 'hover:bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  {page}
+                </button>
+              ) : (
+                <span key={i} className="px-2 text-gray-400">...</span>
+              )
+            ))}
+          </div>
+
+          <button
+            onClick={() => goToPage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+
+          {/* Jump to page */}
+          <div className="ml-4 flex items-center gap-2">
+            <span className="text-sm text-gray-500">Go to:</span>
+            <input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={currentPage}
+              onChange={(e) => {
+                const page = parseInt(e.target.value);
+                if (!isNaN(page)) goToPage(page);
+              }}
+              className="w-16 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-center focus:border-[#1B2838] focus:outline-none"
+            />
+          </div>
         </div>
       )}
     </>
