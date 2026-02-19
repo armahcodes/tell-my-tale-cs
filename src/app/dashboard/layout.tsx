@@ -9,6 +9,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/dashboard/Sidebar';
+import { FloatingChatButton } from '@/components/ui/FloatingChatButton';
 import { Menu, X, Loader2 } from 'lucide-react';
 import { useSession } from '@/lib/auth/use-auth';
 import { useRouter } from 'next/navigation';
@@ -88,6 +89,9 @@ export default function DashboardLayout({
           {children}
         </div>
       </main>
+
+      {/* Floating Chat Button - Bottom Right */}
+      <FloatingChatButton />
     </div>
   );
 }
