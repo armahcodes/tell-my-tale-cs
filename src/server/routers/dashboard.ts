@@ -254,11 +254,11 @@ export const dashboardRouter = router({
     .query(async ({ input }) => {
       const customersWithCounts = await dbService.gorgiasWarehouse.getRecentCustomers(input.limit);
       
-      // Map computed counts to the expected fields
+      // Map computed counts to the expected fields - ensure numbers
       const customers = customersWithCounts.map(c => ({
         ...c,
-        ticketCount: c.computedTicketCount,
-        openTicketCount: c.computedOpenTicketCount,
+        ticketCount: Number(c.computedTicketCount) || 0,
+        openTicketCount: Number(c.computedOpenTicketCount) || 0,
       }));
       
       // Filter by search if provided

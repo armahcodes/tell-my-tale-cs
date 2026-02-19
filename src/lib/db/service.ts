@@ -851,14 +851,20 @@ export const gorgiasWarehouseService = {
     const ticketCounts = await db.select({
       customerId: gorgiasTickets.customerId,
       total: count(),
-      open: sql<number>`count(*) filter (where ${gorgiasTickets.status} = 'open')`,
+      open: sql<string>`cast(count(*) filter (where ${gorgiasTickets.status} = 'open') as integer)`,
     })
       .from(gorgiasTickets)
       .where(inArray(gorgiasTickets.customerId, customerIds))
       .groupBy(gorgiasTickets.customerId);
     
-    // Create a map for quick lookup
-    const countMap = new Map(ticketCounts.map(tc => [tc.customerId, { total: tc.total, open: tc.open }]));
+    // Create a map for quick lookup - ensure numbers
+    const countMap = new Map(ticketCounts.map(tc => [
+      tc.customerId, 
+      { 
+        total: Number(tc.total) || 0, 
+        open: Number(tc.open) || 0 
+      }
+    ]));
     
     // Enrich customers with computed counts
     return customers.map(c => ({

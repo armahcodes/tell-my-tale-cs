@@ -37,10 +37,10 @@ export default function CustomersPage() {
 
   const allCustomers = customersData?.customers || [];
   
-  // Apply filters
+  // Apply filters - ensure numbers
   const customers = allCustomers.filter(c => {
-    if (filterType === 'with-tickets') return (c.ticketCount || 0) > 0;
-    if (filterType === 'open-tickets') return (c.openTicketCount || 0) > 0;
+    if (filterType === 'with-tickets') return Number(c.ticketCount || 0) > 0;
+    if (filterType === 'open-tickets') return Number(c.openTicketCount || 0) > 0;
     return true;
   });
 
@@ -77,10 +77,10 @@ export default function CustomersPage() {
     return customer.email || 'Unknown Customer';
   };
 
-  // Stats
+  // Stats - ensure numbers
   const totalCustomers = allCustomers.length;
-  const withTickets = allCustomers.filter(c => (c.ticketCount || 0) > 0).length;
-  const totalOpenTickets = allCustomers.reduce((sum, c) => sum + (c.openTicketCount || 0), 0);
+  const withTickets = allCustomers.filter(c => Number(c.ticketCount || 0) > 0).length;
+  const totalOpenTickets = allCustomers.reduce((sum, c) => sum + Number(c.openTicketCount || 0), 0);
   const withEmail = allCustomers.filter(c => c.email).length;
 
   return (
