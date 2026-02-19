@@ -247,7 +247,7 @@ export const dashboardRouter = router({
    */
   getGorgiasCustomers: publicProcedure
     .input(z.object({
-      limit: z.number().min(1).max(100).default(50),
+      limit: z.number().min(1).max(500).default(100),
       offset: z.number().min(0).default(0),
       search: z.string().optional(),
     }))
@@ -269,6 +269,34 @@ export const dashboardRouter = router({
       return {
         customers: filtered,
         hasMore: customers.length === input.limit,
+        total: customers.length,
+      };
+    }),
+
+  /**
+   * Get single Gorgias customer by ID with their tickets
+   */
+  getGorgiasCustomerById: publicProcedure
+    .input(z.object({
+      id: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const customer = await dbService.gorgiasWarehouse.getCustomerById(input.id);
+      
+      if (!customer) {
+        return { customer: null, tickets: [] };
+      }
+      
+      // Get customer's tickets
+      const allTickets = await dbService.gorgiasWarehouse.getRecentTickets(500);
+      const customerTickets = allTickets.filter(t => 
+        t.customerId === customer.id || 
+        t.customerEmail === customer.email
+      );
+      
+      return {
+        customer,
+        tickets: customerTickets,
       };
     }),
 
