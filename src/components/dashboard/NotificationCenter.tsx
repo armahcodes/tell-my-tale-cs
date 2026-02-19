@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell,
@@ -11,11 +11,12 @@ import {
   Ticket,
   Users,
   RefreshCw,
-  CheckCheck,
   Trash2,
+  Loader2,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
+import { trpc } from '@/lib/trpc';
 
 interface Notification {
   id: string;
@@ -38,78 +39,152 @@ const iconMap = {
 export function NotificationCenter() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
-  // Load notifications from localStorage
+  // Fetch real data from database
+  const { data: statsData, isLoading: statsLoading } = trpc.dashboard.getStats.useQuery(undefined, {
+    refetchInterval: 60000, // Refresh every minute
+  });
+  
+  const { data: ticketsData, isLoading: ticketsLoading } = trpc.dashboard.getGorgiasTickets.useQuery(
+    { status: 'open', limit: 5 },
+    { refetchInterval: 60000 }
+  );
+
+  const { data: escalationsData } = trpc.escalations.getByStatus.useQuery(
+    { status: 'pending', limit: 5 },
+    { refetchInterval: 60000 }
+  );
+
+  // Load read state from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('tellmytale_notifications');
+    const saved = localStorage.getItem('tellmytale_read_notifications');
     if (saved) {
-      const parsed = JSON.parse(saved).map((n: Notification) => ({
-        ...n,
-        timestamp: new Date(n.timestamp),
-      }));
-      setNotifications(parsed);
-    } else {
-      // Demo notifications
-      setNotifications([
-        {
-          id: '1',
-          type: 'info',
-          title: 'New ticket assigned',
-          message: 'Ticket #1234 has been assigned to you',
-          timestamp: new Date(Date.now() - 1000 * 60 * 30),
-          read: false,
-          link: '/dashboard/orders/1234',
-          icon: 'ticket',
-        },
-        {
-          id: '2',
-          type: 'success',
-          title: 'Data sync completed',
-          message: 'Successfully synced 150 tickets from Gorgias',
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
-          read: false,
-          icon: 'sync',
-        },
-        {
-          id: '3',
-          type: 'warning',
-          title: 'Customer requires attention',
-          message: 'Customer John Doe has 3 open tickets',
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5),
-          read: true,
-          link: '/dashboard/customers',
-          icon: 'customer',
-        },
-      ]);
+      setReadIds(new Set(JSON.parse(saved)));
     }
   }, []);
 
-  // Save notifications to localStorage
+  // Save read state to localStorage
+  const saveReadIds = useCallback((ids: Set<string>) => {
+    localStorage.setItem('tellmytale_read_notifications', JSON.stringify([...ids]));
+  }, []);
+
+  // Build notifications from real data
   useEffect(() => {
-    if (notifications.length > 0) {
-      localStorage.setItem('tellmytale_notifications', JSON.stringify(notifications));
+    const newNotifications: Notification[] = [];
+
+    // Add escalations as high priority notifications
+    if (escalationsData?.escalations && Array.isArray(escalationsData.escalations)) {
+      escalationsData.escalations.forEach((escalation: {
+        id: string;
+        customerEmail: string;
+        reason: string;
+        createdAt: string | Date;
+        conversationId?: string | null;
+      }) => {
+        newNotifications.push({
+          id: `esc-${escalation.id}`,
+          type: 'warning',
+          title: 'Pending Escalation',
+          message: `${escalation.customerEmail}: ${escalation.reason}`,
+          timestamp: new Date(escalation.createdAt),
+          read: readIds.has(`esc-${escalation.id}`),
+          link: escalation.conversationId ? `/dashboard/conversations/${escalation.conversationId}` : '/dashboard/conversations',
+          icon: 'message',
+        });
+      });
     }
-  }, [notifications]);
+
+    // Add open tickets that need attention
+    if (ticketsData?.tickets) {
+      ticketsData.tickets.slice(0, 3).forEach((ticket) => {
+        newNotifications.push({
+          id: `ticket-${ticket.id}`,
+          type: 'info',
+          title: `Open Ticket #${ticket.id}`,
+          message: ticket.subject || `From ${ticket.customerEmail || 'Unknown'}`,
+          timestamp: new Date(ticket.gorgiasCreatedAt),
+          read: readIds.has(`ticket-${ticket.id}`),
+          link: `/dashboard/orders/${ticket.id}`,
+          icon: 'ticket',
+        });
+      });
+    }
+
+    // Add stats-based notifications
+    if (statsData) {
+      const openTickets = statsData.gorgiasOpenTickets || 0;
+      
+      if (openTickets > 10) {
+        const notifId = `backlog-${new Date().toDateString()}`;
+        newNotifications.push({
+          id: notifId,
+          type: openTickets > 50 ? 'error' : 'warning',
+          title: 'Ticket Backlog',
+          message: `${openTickets} open tickets need attention`,
+          timestamp: new Date(),
+          read: readIds.has(notifId),
+          link: '/dashboard/orders',
+          icon: 'ticket',
+        });
+      }
+
+      if (statsData.pendingEscalations > 0) {
+        const notifId = `pending-esc-${new Date().toDateString()}`;
+        if (!newNotifications.some(n => n.id.startsWith('esc-'))) {
+          newNotifications.push({
+            id: notifId,
+            type: 'warning',
+            title: 'Pending Escalations',
+            message: `${statsData.pendingEscalations} escalation(s) waiting for review`,
+            timestamp: new Date(),
+            read: readIds.has(notifId),
+            link: '/dashboard/conversations',
+            icon: 'message',
+          });
+        }
+      }
+    }
+
+    // Sort by timestamp (newest first)
+    newNotifications.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+    setNotifications(newNotifications);
+  }, [escalationsData, ticketsData, statsData, readIds]);
+
+  const isLoading = statsLoading || ticketsLoading;
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const markAsRead = (id: string) => {
+    const newReadIds = new Set(readIds);
+    newReadIds.add(id);
+    setReadIds(newReadIds);
+    saveReadIds(newReadIds);
     setNotifications(prev =>
       prev.map(n => (n.id === id ? { ...n, read: true } : n))
     );
   };
 
   const markAllAsRead = () => {
+    const newReadIds = new Set(readIds);
+    notifications.forEach(n => newReadIds.add(n.id));
+    setReadIds(newReadIds);
+    saveReadIds(newReadIds);
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
-  const deleteNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+  const dismissNotification = (id: string) => {
+    const newReadIds = new Set(readIds);
+    newReadIds.add(id);
+    setReadIds(newReadIds);
+    saveReadIds(newReadIds);
   };
 
-  const clearAll = () => {
-    setNotifications([]);
-    localStorage.removeItem('tellmytale_notifications');
+  const clearAllRead = () => {
+    const allIds = new Set(notifications.map(n => n.id));
+    setReadIds(allIds);
+    saveReadIds(allIds);
   };
 
   const getTypeColor = (type: string) => {
@@ -176,10 +251,16 @@ export function NotificationCenter() {
 
               {/* Notifications List */}
               <div className="max-h-[400px] overflow-y-auto">
-                {notifications.length === 0 ? (
+                {isLoading ? (
+                  <div className="p-8 text-center">
+                    <Loader2 className="w-8 h-8 text-gray-300 mx-auto mb-3 animate-spin" />
+                    <p className="text-sm text-gray-500">Loading notifications...</p>
+                  </div>
+                ) : notifications.length === 0 ? (
                   <div className="p-8 text-center">
                     <Bell className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                    <p className="text-sm text-gray-500">No notifications yet</p>
+                    <p className="text-sm text-gray-500">All caught up!</p>
+                    <p className="text-xs text-gray-400 mt-1">No pending items need your attention</p>
                   </div>
                 ) : (
                   <div className="divide-y divide-gray-100">
@@ -204,11 +285,12 @@ export function NotificationCenter() {
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  deleteNotification(notification.id);
+                                  dismissNotification(notification.id);
                                 }}
                                 className="p-1 hover:bg-gray-200 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Dismiss"
                               >
-                                <Trash2 className="w-3 h-3 text-gray-400" />
+                                <X className="w-3 h-3 text-gray-400" />
                               </button>
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
@@ -259,14 +341,14 @@ export function NotificationCenter() {
               </div>
 
               {/* Footer */}
-              {notifications.length > 0 && (
+              {notifications.length > 0 && unreadCount > 0 && (
                 <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
                   <button
-                    onClick={clearAll}
+                    onClick={clearAllRead}
                     className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 mx-auto"
                   >
-                    <Trash2 className="w-3 h-3" />
-                    Clear all notifications
+                    <Check className="w-3 h-3" />
+                    Dismiss all notifications
                   </button>
                 </div>
               )}
