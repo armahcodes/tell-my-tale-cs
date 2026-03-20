@@ -190,7 +190,7 @@ export default function ConversationsPage() {
           <span className="flex items-center gap-2">
             <Headphones className="w-4 h-4" />
             Gorgias Tickets
-            <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full">
+            <span className="px-2 py-0.5 text-xs bg-[#4A90D9]/15 text-[#1B2838] rounded-full">
               {statsData?.gorgiasTickets?.toLocaleString() || 0}
             </span>
           </span>
@@ -283,8 +283,8 @@ export default function ConversationsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2 md:gap-4 mb-6">
-          <div className="p-3 md:p-4 rounded-lg md:rounded-xl bg-purple-50 border border-purple-100">
-            <p className="text-lg md:text-2xl font-bold text-purple-600">{totalGorgiasTickets.toLocaleString()}</p>
+          <div className="p-3 md:p-4 rounded-lg md:rounded-xl bg-[#4A90D9]/10 border border-[#4A90D9]/20">
+            <p className="text-lg md:text-2xl font-bold text-[#4A90D9]">{totalGorgiasTickets.toLocaleString()}</p>
             <p className="text-[10px] md:text-xs text-gray-500">Total Tickets</p>
           </div>
           <div className="p-3 md:p-4 rounded-lg md:rounded-xl bg-blue-50 border border-blue-100">
@@ -399,7 +399,7 @@ export default function ConversationsPage() {
           // Gorgias Tickets Tab
           isLoadingGorgias ? (
             <div className="bg-white rounded-xl md:rounded-2xl p-8 md:p-12 text-center border border-gray-200">
-              <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
+              <Loader2 className="w-8 h-8 animate-spin text-[#4A90D9] mx-auto mb-4" />
               <p className="text-sm text-gray-500">Loading Gorgias tickets...</p>
             </div>
           ) : filteredGorgiasTickets.length === 0 ? (
@@ -426,8 +426,8 @@ export default function ConversationsPage() {
                 >
                   <div className="flex items-start gap-3 md:gap-4">
                     {/* Channel Icon */}
-                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-                      <ChannelIcon className="w-5 h-5 md:w-6 md:h-6 text-purple-600" />
+                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-[#4A90D9]/15 flex items-center justify-center flex-shrink-0">
+                      <ChannelIcon className="w-5 h-5 md:w-6 md:h-6 text-[#4A90D9]" />
                     </div>
 
                     {/* Content */}
@@ -456,7 +456,7 @@ export default function ConversationsPage() {
                             ? formatDistanceToNow(new Date(ticket.gorgiasCreatedAt), { addSuffix: true })
                             : 'Unknown'}
                         </span>
-                        <span className="capitalize bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
+                        <span className="capitalize bg-[#4A90D9]/10 text-[#1B2838] px-2 py-0.5 rounded-full">
                           {ticket.channel || 'unknown'}
                         </span>
                         <span className="bg-gray-100 px-2 py-0.5 rounded-full">
@@ -474,10 +474,10 @@ export default function ConversationsPage() {
                     <div className="flex items-center gap-2">
                       <Link
                         href={`/dashboard/orders/${ticket.id}`}
-                        className="p-1.5 md:p-2 hover:bg-purple-50 rounded-lg transition-colors"
+                        className="p-1.5 md:p-2 hover:bg-[#4A90D9]/10 rounded-lg transition-colors"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <ArrowRight className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
+                        <ArrowRight className="w-4 h-4 md:w-5 md:h-5 text-[#4A90D9]" />
                       </Link>
                     </div>
                   </div>

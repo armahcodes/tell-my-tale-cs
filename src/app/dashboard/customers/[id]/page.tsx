@@ -164,7 +164,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       >
         <div className="flex flex-col md:flex-row md:items-start gap-6">
           {/* Avatar */}
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center flex-shrink-0">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#1B2838] to-[#2D4A6F] flex items-center justify-center flex-shrink-0">
             <span className="text-white font-bold text-2xl">
               {getInitials(customer.firstname, customer.lastname, customer.name, customer.email)}
             </span>
@@ -184,7 +184,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-4">
               {customer.email && (
-                <a href={`mailto:${customer.email}`} className="flex items-center gap-1.5 hover:text-purple-600 transition-colors">
+                <a href={`mailto:${customer.email}`} className="flex items-center gap-1.5 hover:text-[#4A90D9] transition-colors">
                   <Mail className="w-4 h-4" />
                   {customer.email}
                 </a>
@@ -205,9 +205,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
             {/* Stats */}
             <div className="flex flex-wrap gap-4">
-              <div className="px-4 py-2 bg-purple-50 rounded-xl">
+              <div className="px-4 py-2 bg-[#4A90D9]/10 rounded-xl">
                 <p className="text-xs text-gray-500">Total Tickets</p>
-                <p className="text-xl font-bold text-purple-700">{tickets.length}</p>
+                <p className="text-xl font-bold text-[#1B2838]">{tickets.length}</p>
               </div>
               <div className="px-4 py-2 bg-amber-50 rounded-xl">
                 <p className="text-xs text-gray-500">Open</p>
@@ -272,7 +272,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                       <p className="text-xs text-gray-500 truncate">{channel.address}</p>
                     </div>
                     {channel.preferred && (
-                      <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-medium">
+                      <span className="px-2 py-0.5 bg-[#4A90D9]/15 text-[#1B2838] rounded text-[10px] font-medium">
                         Preferred
                       </span>
                     )}
@@ -390,7 +390,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                     {/* Channel icon */}
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
                       ticket.channel === 'email' ? 'bg-blue-100 text-blue-600' :
-                      ticket.channel === 'chat' ? 'bg-purple-100 text-purple-600' :
+                      ticket.channel === 'chat' ? 'bg-[#4A90D9]/15 text-[#4A90D9]' :
                       ticket.channel === 'phone' ? 'bg-green-100 text-green-600' :
                       'bg-gray-100 text-gray-600'
                     }`}>
@@ -410,7 +410,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                         </span>
                       </div>
 
-                      <h4 className="font-medium text-[#1B2838] mb-1 line-clamp-1 group-hover:text-purple-600 transition-colors">
+                      <h4 className="font-medium text-[#1B2838] mb-1 line-clamp-1 group-hover:text-[#4A90D9] transition-colors">
                         {ticket.subject || 'No subject'}
                       </h4>
 

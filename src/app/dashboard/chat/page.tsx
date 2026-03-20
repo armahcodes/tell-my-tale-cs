@@ -313,12 +313,12 @@ export default function ChatTestPage() {
             <>
               {/* User Status Banner */}
               {session?.user ? (
-                <div className="px-4 py-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-emerald-700">
+                <div className="px-4 py-2.5 bg-gradient-to-r from-green-50 to-green-50 border-b border-green-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-green-700">
                     <Shield className="w-4 h-4" />
                     <span>Signed in as <strong>{session.user.name || session.user.email}</strong></span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-emerald-600">
+                  <div className="flex items-center gap-1.5 text-xs text-green-600">
                     <Zap className="w-3.5 h-3.5" />
                     <span>Personalized Experience</span>
                   </div>
@@ -349,7 +349,7 @@ export default function ChatTestPage() {
                         : "I'm the TellMyTale AI assistant. Ask me about orders, products, shipping, or anything else!"}
                     </p>
                     {session?.user && (
-                      <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-full text-xs text-emerald-700">
+                      <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 rounded-full text-xs text-green-700">
                         <Shield className="w-3 h-3" />
                         <span>Your order history is available</span>
                       </div>
@@ -502,12 +502,12 @@ export default function ChatTestPage() {
 
           {session?.user ? (
             <>
-              <div className="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
+              <div className="p-4 bg-gradient-to-br from-green-50 to-green-50 rounded-xl border border-green-100">
                 <div className="flex items-center gap-2 mb-2">
-                  <Shield className="w-4 h-4 text-emerald-600" />
-                  <h4 className="font-medium text-emerald-800">Personalized Mode</h4>
+                  <Shield className="w-4 h-4 text-green-600" />
+                  <h4 className="font-medium text-green-800">Personalized Mode</h4>
                 </div>
-                <ul className="text-xs text-emerald-700 space-y-1">
+                <ul className="text-xs text-green-700 space-y-1">
                   <li>• Your orders are automatically available</li>
                   <li>• No need to provide email for lookups</li>
                   <li>• Conversation history is saved</li>

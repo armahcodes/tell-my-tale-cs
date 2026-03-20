@@ -51,7 +51,7 @@ const channelIcons: Record<string, typeof Mail> = {
 const channelColors: Record<string, string> = {
   email: 'bg-blue-100 text-blue-700',
   phone: 'bg-green-100 text-green-700',
-  chat: 'bg-purple-100 text-purple-700',
+  chat: 'bg-[#4A90D9]/15 text-[#1B2838]',
   helpdesk: 'bg-amber-100 text-amber-700',
 };
 
@@ -214,12 +214,12 @@ export default function TicketDetailPage() {
                     >
                       <div className="flex items-start gap-3">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          isFromAgent ? 'bg-blue-100' : 'bg-purple-100'
+                          isFromAgent ? 'bg-blue-100' : 'bg-[#4A90D9]/15'
                         }`}>
                           {isFromAgent ? (
                             <UserCircle className="w-5 h-5 text-blue-600" />
                           ) : (
-                            <User className="w-5 h-5 text-purple-600" />
+                            <User className="w-5 h-5 text-[#4A90D9]" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -228,7 +228,7 @@ export default function TicketDetailPage() {
                               {message.senderName || message.senderEmail || 'Unknown'}
                             </span>
                             <span className={`px-2 py-0.5 rounded text-xs ${
-                              isFromAgent ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                              isFromAgent ? 'bg-blue-100 text-blue-700' : 'bg-[#4A90D9]/15 text-[#1B2838]'
                             }`}>
                               {isFromAgent ? 'Agent' : 'Customer'}
                             </span>
@@ -296,7 +296,7 @@ export default function TicketDetailPage() {
                 className="block hover:bg-gray-50 -mx-2 px-2 py-2 rounded-lg transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#1B2838] to-[#2D4A6F] flex items-center justify-center">
                     <span className="text-white font-semibold">
                       {(customer.firstname?.[0] || customer.email?.[0] || '?').toUpperCase()}
                     </span>
@@ -422,7 +422,7 @@ export default function TicketDetailPage() {
 
               {ticket.lastMessageDatetime && (
                 <div className="flex items-start gap-3">
-                  <div className="w-2 h-2 mt-1.5 rounded-full bg-purple-500"></div>
+                  <div className="w-2 h-2 mt-1.5 rounded-full bg-[#4A90D9]"></div>
                   <div>
                     <p className="text-gray-700">Last Message</p>
                     <p className="text-xs text-gray-500">{formatDate(ticket.lastMessageDatetime)}</p>
@@ -455,7 +455,7 @@ export default function TicketDetailPage() {
             href={`https://${process.env.NEXT_PUBLIC_GORGIAS_DOMAIN || 'app'}.gorgias.com/app/ticket/${ticket.id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 w-full p-3 bg-purple-50 text-purple-700 rounded-xl hover:bg-purple-100 transition-colors font-medium"
+            className="flex items-center justify-center gap-2 w-full p-3 bg-[#4A90D9]/10 text-[#1B2838] rounded-xl hover:bg-[#4A90D9]/15 transition-colors font-medium"
           >
             <ExternalLink className="w-4 h-4" />
             View in Gorgias

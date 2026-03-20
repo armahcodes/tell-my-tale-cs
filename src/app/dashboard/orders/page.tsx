@@ -39,7 +39,7 @@ const channelIcons: Record<string, React.ReactNode> = {
 const channelColors: Record<string, string> = {
   email: 'bg-blue-50 text-blue-600',
   phone: 'bg-green-50 text-green-600',
-  chat: 'bg-purple-50 text-purple-600',
+  chat: 'bg-[#4A90D9]/10 text-[#4A90D9]',
   helpdesk: 'bg-amber-50 text-amber-600',
 };
 
@@ -180,12 +180,12 @@ export default function TicketsPage() {
           </div>
           <p className="text-2xl font-bold text-green-700">{closedCount}</p>
         </div>
-        <div className="p-4 rounded-xl bg-purple-50 border border-purple-100">
+        <div className="p-4 rounded-xl bg-[#4A90D9]/10 border border-[#4A90D9]/20">
           <div className="flex items-center gap-2 mb-1">
-            <Mail className="w-4 h-4 text-purple-600" />
+            <Mail className="w-4 h-4 text-[#4A90D9]" />
             <span className="text-xs text-gray-500">Email (page)</span>
           </div>
-          <p className="text-2xl font-bold text-purple-700">{emailCount}</p>
+          <p className="text-2xl font-bold text-[#1B2838]">{emailCount}</p>
         </div>
       </div>
 
@@ -281,7 +281,7 @@ export default function TicketsPage() {
                       </span>
                     </div>
 
-                    <h3 className="font-semibold text-[#1B2838] mb-2 line-clamp-1 group-hover:text-purple-600 transition-colors">
+                    <h3 className="font-semibold text-[#1B2838] mb-2 line-clamp-1 group-hover:text-[#4A90D9] transition-colors">
                       {ticket.subject || 'No subject'}
                     </h3>
 

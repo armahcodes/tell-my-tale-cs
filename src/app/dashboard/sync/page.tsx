@@ -145,10 +145,10 @@ export default function SyncManagementPage() {
           { label: 'Tickets', value: stats?.totalTickets || 0, icon: Ticket, color: 'bg-blue-50 border-blue-100 text-blue-700' },
           { label: 'Open', value: stats?.openTickets || 0, icon: Clock, color: 'bg-amber-50 border-amber-100 text-amber-700' },
           { label: 'Closed', value: stats?.closedTickets || 0, icon: CheckCircle, color: 'bg-green-50 border-green-100 text-green-700' },
-          { label: 'Customers', value: stats?.totalCustomers || 0, icon: Users, color: 'bg-purple-50 border-purple-100 text-purple-700' },
-          { label: 'Messages', value: stats?.totalMessages || 0, icon: MessageSquare, color: 'bg-emerald-50 border-emerald-100 text-emerald-700' },
-          { label: 'Agents', value: stats?.totalUsers || 0, icon: Users, color: 'bg-indigo-50 border-indigo-100 text-indigo-700' },
-          { label: 'Tags', value: stats?.totalTags || 0, icon: Tag, color: 'bg-pink-50 border-pink-100 text-pink-700' },
+          { label: 'Customers', value: stats?.totalCustomers || 0, icon: Users, color: 'bg-[#4A90D9]/10 border-[#4A90D9]/20 text-[#4A90D9]' },
+          { label: 'Messages', value: stats?.totalMessages || 0, icon: MessageSquare, color: 'bg-gray-50 border-gray-200 text-gray-700' },
+          { label: 'Agents', value: stats?.totalUsers || 0, icon: Users, color: 'bg-[#1B2838]/5 border-[#1B2838]/10 text-[#1B2838]' },
+          { label: 'Tags', value: stats?.totalTags || 0, icon: Tag, color: 'bg-amber-50 border-amber-100 text-amber-700' },
         ].map((stat) => (
           <div key={stat.label} className={`rounded-xl p-3 md:p-4 border ${stat.color}`}>
             <div className="flex items-center gap-2 mb-1">

@@ -138,12 +138,12 @@ export default function CustomersPage() {
           </div>
           <p className="text-2xl font-bold text-blue-700">{totalCustomers.toLocaleString()}</p>
         </div>
-        <div className="p-4 rounded-xl bg-purple-50 border border-purple-100">
+        <div className="p-4 rounded-xl bg-[#4A90D9]/10 border border-[#4A90D9]/20">
           <div className="flex items-center gap-2 mb-1">
-            <Ticket className="w-4 h-4 text-purple-600" />
+            <Ticket className="w-4 h-4 text-[#4A90D9]" />
             <span className="text-xs text-gray-500">With Tickets (page)</span>
           </div>
-          <p className="text-2xl font-bold text-purple-700">{withTickets}</p>
+          <p className="text-2xl font-bold text-[#1B2838]">{withTickets}</p>
         </div>
         <div className="p-4 rounded-xl bg-amber-50 border border-amber-100">
           <div className="flex items-center gap-2 mb-1">
@@ -242,7 +242,7 @@ export default function CustomersPage() {
               >
                 <div className="flex items-start gap-4">
                   {/* Avatar */}
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center flex-shrink-0">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#1B2838] to-[#2D4A6F] flex items-center justify-center flex-shrink-0">
                     <span className="text-white font-semibold">
                       {getInitials(customer.firstname, customer.lastname, customer.name, customer.email)}
                     </span>
@@ -251,11 +251,11 @@ export default function CustomersPage() {
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
-                      <h3 className="font-semibold text-[#1B2838] truncate group-hover:text-purple-600 transition-colors">
+                      <h3 className="font-semibold text-[#1B2838] truncate group-hover:text-[#4A90D9] transition-colors">
                         {getDisplayName(customer)}
                       </h3>
                       {Number(customer.ticketCount || 0) > 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 flex items-center gap-1">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#4A90D9]/10 text-[#1B2838] flex items-center gap-1">
                           <Ticket className="w-3 h-3" />
                           {customer.ticketCount}
                         </span>

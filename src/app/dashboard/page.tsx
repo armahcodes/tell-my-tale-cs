@@ -134,7 +134,7 @@ export default function DashboardPage() {
             label: 'Total Tickets',
             value: stats.gorgiasTickets.toLocaleString(),
             subtext: stats.gorgiasTicketsToday > 0 ? `+${stats.gorgiasTicketsToday} today` : undefined,
-            color: 'purple',
+            color: 'blue',
           },
           {
             icon: AlertCircle,
@@ -154,7 +154,7 @@ export default function DashboardPage() {
             label: 'Avg Response',
             value: formatResponseTime(stats.gorgiasAvgResponseSec),
             subtext: stats.gorgiasMessages > 0 ? `${stats.gorgiasMessages.toLocaleString()} messages` : undefined,
-            color: 'teal',
+            color: 'blue',
           },
         ].map((stat, i) => (
           <motion.div
@@ -284,7 +284,7 @@ export default function DashboardPage() {
                 >
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
                     ticket.channel === 'email' ? 'bg-blue-50 text-blue-600' :
-                    ticket.channel === 'chat' ? 'bg-purple-50 text-purple-600' :
+                    ticket.channel === 'chat' ? 'bg-[#4A90D9]/10 text-[#4A90D9]' :
                     'bg-gray-100 text-gray-500'
                   }`}>
                     {channelIcons[ticket.channel || 'email'] || <Headphones className="w-5 h-5" />}
@@ -333,7 +333,7 @@ export default function DashboardPage() {
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors group"
                 >
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center flex-shrink-0 text-white font-semibold text-sm">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#1B2838] to-[#2D4A6F] flex items-center justify-center flex-shrink-0 text-white font-semibold text-sm">
                     {getInitials(customer.firstname, customer.lastname, customer.name, customer.email)}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -347,7 +347,7 @@ export default function DashboardPage() {
                   <div className="text-right flex items-center gap-2">
                     <div>
                       {(customer.ticketCount || 0) > 0 && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#4A90D9]/10 text-[#4A90D9]">
                           {customer.ticketCount} tickets
                         </span>
                       )}
@@ -394,7 +394,7 @@ export default function DashboardPage() {
 
       {/* Empty State - Show if no Gorgias data */}
       {!isStatsLoading && stats.gorgiasTickets === 0 && (
-        <div className="mt-8 bg-gradient-to-br from-gray-50 to-slate-50 rounded-2xl p-6 md:p-8 border border-gray-200 text-center">
+        <div className="mt-8 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl p-6 md:p-8 border border-gray-200 text-center">
           <Ticket className="w-12 h-12 mx-auto mb-4 text-gray-400" />
           <h3 className="text-lg font-bold text-[#1B2838] mb-2">No Gorgias Data Yet</h3>
           <p className="text-sm text-gray-600 mb-4 max-w-md mx-auto">

@@ -281,7 +281,7 @@ export function GlobalSearch() {
                               ? 'bg-white/20 text-white' 
                               : result.type === 'ticket' 
                                 ? 'bg-blue-50 text-blue-600'
-                                : 'bg-purple-50 text-purple-600'
+                                : 'bg-[#4A90D9]/10 text-[#4A90D9]'
                           }`}>
                             {result.type}
                           </span>

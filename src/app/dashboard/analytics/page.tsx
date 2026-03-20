@@ -77,7 +77,7 @@ export default function AnalyticsPage() {
   const channelIcons: Record<string, React.ReactNode> = {
     email: <Mail className="w-4 h-4 text-blue-600" />,
     phone: <Phone className="w-4 h-4 text-green-600" />,
-    chat: <MessageSquare className="w-4 h-4 text-purple-600" />,
+    chat: <MessageSquare className="w-4 h-4 text-[#4A90D9]" />,
     helpdesk: <Headphones className="w-4 h-4 text-amber-600" />,
   };
 
@@ -230,7 +230,7 @@ export default function AnalyticsPage() {
                           className={`h-full rounded-full ${
                             channel === 'email' ? 'bg-blue-500' :
                             channel === 'phone' ? 'bg-green-500' :
-                            channel === 'chat' ? 'bg-purple-500' :
+                            channel === 'chat' ? 'bg-[#4A90D9]' :
                             'bg-amber-500'
                           }`}
                         />
