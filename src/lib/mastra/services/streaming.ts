@@ -5,6 +5,7 @@
  * Based on: https://mastra.ai/docs/server/mastra-client
  */
 
+import { createTool } from '@mastra/core/tools';
 import { getProductionAgent, AgentPool } from '../agents/production-agent';
 import { getObservabilityService, type AgentMetrics } from './observability';
 import { createMemoryContext } from '../config/memory';
@@ -54,9 +55,12 @@ export class StreamingService {
   private observability = getObservabilityService();
   private activeStreams: Map<string, AbortController> = new Map();
 
-  constructor(config: Partial<StreamConfig> = {}) {
+  constructor(
+    config: Partial<StreamConfig> = {},
+    composioTools?: Record<string, ReturnType<typeof createTool>>
+  ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-    this.agentPool = new AgentPool(5); // 5 agent instances for high concurrency
+    this.agentPool = new AgentPool(5, composioTools); // 5 agent instances for high concurrency
   }
 
   /**
@@ -293,9 +297,21 @@ function estimateTokens(text: string): number {
 // Singleton instance
 let _streamingService: StreamingService | null = null;
 
-export const getStreamingService = (): StreamingService => {
+export const getStreamingService = (
+  composioTools?: Record<string, ReturnType<typeof createTool>>
+): StreamingService => {
   if (!_streamingService) {
-    _streamingService = new StreamingService();
+    _streamingService = new StreamingService({}, composioTools);
   }
+  return _streamingService;
+};
+
+/**
+ * Reinitialize the streaming service with Composio tools
+ */
+export const reinitStreamingService = (
+  composioTools: Record<string, ReturnType<typeof createTool>>
+): StreamingService => {
+  _streamingService = new StreamingService({}, composioTools);
   return _streamingService;
 };

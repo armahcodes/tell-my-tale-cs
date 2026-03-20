@@ -1,19 +1,21 @@
 /**
  * Production Chat API
- * High-performance streaming endpoint with resilience and observability
- * 
- * Features:
- * - Automatic retry with exponential backoff
- * - Request queuing for high concurrency
- * - Real-time metrics collection
- * - Graceful degradation
+ * High-performance streaming endpoint with resilience and observability.
+ *
+ * When useWorkflow=true (default), runs the durable chat workflow via
+ * Workflow DevKit — making every step retryable and the whole pipeline
+ * resumable across crashes and deploys.
+ *
+ * Falls back to the direct streaming path when useWorkflow=false.
  */
 
 import { NextRequest } from 'next/server';
+import { start } from 'workflow/api';
 import { dbService } from '@/lib/db/service';
 import { auth } from '@/lib/auth/auth';
 import { headers } from 'next/headers';
 import { agentManager, getObservabilityService } from '@/lib/mastra';
+import { chatWorkflow, type ChatWorkflowInput } from '@/workflows/chat';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -37,7 +39,7 @@ interface ChatRequestBody {
 
 export async function POST(req: NextRequest) {
   const observability = getObservabilityService();
-  
+
   try {
     // Get authenticated session (optional - allows both authenticated and guest users)
     let session = null;
@@ -51,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     const body: ChatRequestBody = await req.json();
     const { messages, conversationId, orderNumber, channel, useWorkflow, priority } = body;
-    
+
     // Use authenticated user info if available, otherwise use provided info
     const customerEmail = session?.user?.email || body.customerEmail;
     const customerName = session?.user?.name || body.customerName;
@@ -68,7 +70,7 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.VERCEL_API_KEY || process.env.AI_GATEWAY_API_KEY;
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           error: 'AI Gateway API key not configured',
           details: 'Set VERCEL_API_KEY in environment variables'
         }),
@@ -76,9 +78,55 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ============================================
+    // Durable Workflow Path (default)
+    // ============================================
+    if (useWorkflow !== false) {
+      try {
+        const workflowInput: ChatWorkflowInput = {
+          messages,
+          conversationId,
+          customerEmail,
+          customerName,
+          orderNumber,
+          channel: channel || (isAuthenticated ? 'authenticated_chat' : 'web_chat'),
+          priority: priority || (isAuthenticated ? 'high' : 'medium'),
+        };
+
+        const run = await start(chatWorkflow, [workflowInput]);
+
+        // Wait for the workflow result (durable — survives crashes/deploys)
+        const result = await run.returnValue;
+
+        return new Response(
+          JSON.stringify({
+            response: result.response,
+            conversationId: result.conversationId,
+            intent: result.intent,
+            priority: result.priority,
+            toolsUsed: result.toolsUsed,
+          }),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Workflow-Run-Id': run.runId,
+              'X-Conversation-Id': result.conversationId || '',
+            },
+          }
+        );
+      } catch (workflowError) {
+        console.error('[Chat API] Workflow error, falling back to direct stream:', workflowError);
+        // Fall through to direct streaming path
+      }
+    }
+
+    // ============================================
+    // Direct Streaming Path (fallback)
+    // ============================================
+
     // Create or get conversation if email is provided
     let currentConversationId = conversationId;
-    
+
     if (customerEmail && !currentConversationId && dbService.isAvailable()) {
       const conversation = await dbService.conversations.create({
         customerEmail,
@@ -87,7 +135,7 @@ export async function POST(req: NextRequest) {
         channel: channel || (isAuthenticated ? 'authenticated_chat' : 'web_chat'),
         status: 'active',
       });
-      
+
       if (conversation) {
         currentConversationId = conversation.id;
         await dbService.stats.incrementConversationCount();
@@ -121,11 +169,10 @@ export async function POST(req: NextRequest) {
         orderNumber,
         channel: channel || (isAuthenticated ? 'authenticated_chat' : 'web_chat'),
         priority: priority || (isAuthenticated ? 'high' : 'medium'),
-        useWorkflow: useWorkflow ?? true, // Enable workflow by default
+        useWorkflow: false,
       });
 
       // Create wrapper stream to save response to database
-      const encoder = new TextEncoder();
       const decoder = new TextDecoder();
       let fullResponse = '';
 
@@ -133,23 +180,23 @@ export async function POST(req: NextRequest) {
         async start(controller) {
           try {
             const reader = streamResponse.stream.getReader();
-            
+
             while (true) {
               const { done, value } = await reader.read();
-              
+
               if (done) {
                 break;
               }
-              
+
               if (value) {
                 const text = decoder.decode(value, { stream: true });
                 fullResponse += text;
                 controller.enqueue(value);
               }
             }
-            
+
             controller.close();
-            
+
             // Save assistant response to database after stream completes
             if (currentConversationId && fullResponse && dbService.isAvailable()) {
               await dbService.messages.create({
@@ -164,7 +211,7 @@ export async function POST(req: NextRequest) {
           }
         },
       });
-      
+
       // Build response headers
       const responseHeaders: HeadersInit = {
         'Content-Type': 'text/plain; charset=utf-8',
@@ -173,58 +220,57 @@ export async function POST(req: NextRequest) {
         'X-Request-Id': streamResponse.requestId,
         'X-Agent-Name': streamResponse.agentName,
       };
-      
+
       if (streamResponse.conversationId) {
         responseHeaders['X-Conversation-Id'] = streamResponse.conversationId;
       }
-      
+
       return new Response(wrappedStream, { headers: responseHeaders });
-      
+
     } catch (streamError) {
       console.error('[Chat API] Streaming error:', {
         error: streamError,
         runId: crypto.randomUUID(),
       });
-      
+
       const errorMessage = streamError instanceof Error ? streamError.message : String(streamError);
-      
-      // Handle specific error types
+
       if (errorMessage.includes('API key') || errorMessage.includes('Unauthorized') || errorMessage.includes('401')) {
         return new Response(
-          JSON.stringify({ 
+          JSON.stringify({
             error: 'Invalid AI Gateway API key',
             details: 'Check that your API keys are valid'
           }),
           { status: 401, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      
+
       if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit') || errorMessage.includes('429')) {
         return new Response(
-          JSON.stringify({ 
+          JSON.stringify({
             error: 'Rate limit exceeded',
             details: 'Too many requests. Please try again in a moment.'
           }),
           { status: 429, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      
+
       if (errorMessage.includes('TLS') || errorMessage.includes('ECONNRESET') || errorMessage.includes('network') || errorMessage.includes('socket') || errorMessage.includes('timeout')) {
         return new Response(
-          JSON.stringify({ 
+          JSON.stringify({
             error: 'Connection error',
             details: 'Could not connect to AI service. Please try again.'
           }),
           { status: 503, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      
+
       throw streamError;
     }
   } catch (error) {
     console.error('[Chat API] Error:', error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: 'An error occurred while processing your request',
         details: error instanceof Error ? error.message : 'Unknown error'
       }),
@@ -240,7 +286,7 @@ export async function GET() {
   try {
     const health = await agentManager.getHealth();
     const metrics = agentManager.getMetrics();
-    
+
     return new Response(
       JSON.stringify({
         status: health.status,

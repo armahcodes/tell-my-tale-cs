@@ -21,6 +21,16 @@ export { gorgiasService } from './service';
 // Warehouse Sync
 export { gorgiasWarehouseSync } from './warehouse-sync';
 
+// Setup (HTTP Integration + Widget)
+export {
+  setupGorgiasApp,
+  teardownGorgiasApp,
+  getSetupStatus,
+  findExistingIntegration,
+  createIntegration,
+  createWidget,
+} from './setup';
+
 // Webhooks
 export {
   verifyWebhookSignature,

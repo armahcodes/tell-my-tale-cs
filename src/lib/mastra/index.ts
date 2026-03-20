@@ -13,7 +13,7 @@
 
 import { Mastra } from '@mastra/core';
 import { customerSuccessAgent } from './agents/customer-success-agent';
-import { createProductionAgent, getProductionAgent, AgentPool } from './agents/production-agent';
+import { createProductionAgent, getProductionAgent, initProductionAgentWithComposio, AgentPool } from './agents/production-agent';
 import { mastraStorage, checkStorageHealth } from './config/storage';
 import { createAgentMemory, createMemoryContext, generateThreadId, generateResourceId } from './config/memory';
 import { customerSupportWorkflow } from './workflows/customer-support-workflow';
@@ -40,6 +40,7 @@ export {
   customerSuccessAgent,
   createProductionAgent,
   getProductionAgent,
+  initProductionAgentWithComposio,
   AgentPool,
   
   // Storage & Memory
