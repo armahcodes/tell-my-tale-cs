@@ -106,10 +106,12 @@ export async function createIntegration(): Promise<GorgiasIntegration> {
  * Create the sidebar widget that renders integration data in the ticket view.
  */
 export async function createWidget(integrationId: number): Promise<GorgiasWidget> {
+  const baseUrl = process.env.TELLMYTALE_BASE_URL || '';
+  const widgetSecret = process.env.GORGIAS_WIDGET_SECRET || '';
   const gorgiasBaseUrl = process.env.GORGIAS_DOMAIN
     ? `https://${process.env.GORGIAS_DOMAIN}.gorgias.com`
     : '';
-  const dashboardUrl = process.env.TELLMYTALE_BASE_URL || '';
+  const dashboardUrl = baseUrl;
 
   const template: WidgetTemplate = {
     type: 'wrapper',
@@ -305,6 +307,40 @@ export async function createWidget(integrationId: number): Promise<GorgiasWidget
                   }]
                 : []),
             ],
+            ...(baseUrl ? {
+              buttons: [
+                {
+                  label: 'Escalate Ticket',
+                  action: {
+                    url: `${baseUrl}/api/gorgias/actions?action=escalate&ticket_id={{ticket.id}}&email={{ticket.customer.email}}&customer_id={{ticket.customer_id}}&performer_id={{action_performer_id}}`,
+                    method: 'POST',
+                    headers: [
+                      ...(widgetSecret ? [{ key: 'X-TellMyTale-Key', value: widgetSecret }] : []),
+                    ],
+                  },
+                },
+                {
+                  label: 'AI Suggested Reply',
+                  action: {
+                    url: `${baseUrl}/api/gorgias/actions?action=ai-response&ticket_id={{ticket.id}}&email={{ticket.customer.email}}`,
+                    method: 'POST',
+                    headers: [
+                      ...(widgetSecret ? [{ key: 'X-TellMyTale-Key', value: widgetSecret }] : []),
+                    ],
+                  },
+                },
+                {
+                  label: 'Sync Customer Data',
+                  action: {
+                    url: `${baseUrl}/api/gorgias/actions?action=sync-customer&ticket_id={{ticket.id}}&email={{ticket.customer.email}}&customer_id={{ticket.customer_id}}`,
+                    method: 'POST',
+                    headers: [
+                      ...(widgetSecret ? [{ key: 'X-TellMyTale-Key', value: widgetSecret }] : []),
+                    ],
+                  },
+                },
+              ],
+            } : {}),
           },
         },
         widgets: [],

@@ -21,6 +21,12 @@ export { gorgiasService } from './service';
 // Warehouse Sync
 export { gorgiasWarehouseSync } from './warehouse-sync';
 
+// Widget Cache
+export { getCached, setCache, invalidateCache } from './widget-cache';
+
+// Middleware
+export { verifyWidgetSecret, getClientIp, createRateLimiter } from './middleware';
+
 // Setup (HTTP Integration + Widget)
 export {
   setupGorgiasApp,

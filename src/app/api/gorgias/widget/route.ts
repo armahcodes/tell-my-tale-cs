@@ -22,81 +22,11 @@ import {
 import { eq, desc, sql, count } from 'drizzle-orm';
 import { isComposioAvailable } from '@/lib/composio';
 import { executeComposioTool } from '@/lib/composio/tools';
+import { getCached, setCache } from '@/lib/gorgias/widget-cache';
+import { verifyWidgetSecret, getClientIp, createRateLimiter } from '@/lib/gorgias/middleware';
 
-// ============================================
-// In-Memory Cache
-// ============================================
-
-interface CacheEntry {
-  data: Record<string, unknown>;
-  timestamp: number;
-}
-
-const widgetCache = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
-
-function getCached(email: string): Record<string, unknown> | null {
-  const entry = widgetCache.get(email);
-  if (entry && Date.now() - entry.timestamp < CACHE_TTL_MS) {
-    return entry.data;
-  }
-  if (entry) widgetCache.delete(email); // Expired
-  return null;
-}
-
-function setCache(email: string, data: Record<string, unknown>): void {
-  widgetCache.set(email, { data, timestamp: Date.now() });
-
-  // Evict stale entries periodically (keep cache from growing unbounded)
-  if (widgetCache.size > 500) {
-    const now = Date.now();
-    for (const [key, entry] of widgetCache) {
-      if (now - entry.timestamp > CACHE_TTL_MS) {
-        widgetCache.delete(key);
-      }
-    }
-  }
-}
-
-// ============================================
-// Rate Limiting (sliding window, per IP)
-// ============================================
-
-const rateLimitMap = new Map<string, number[]>();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const RATE_LIMIT_MAX = 60; // 60 requests per minute per IP
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const timestamps = rateLimitMap.get(ip) || [];
-
-  // Remove expired entries
-  const valid = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
-  valid.push(now);
-  rateLimitMap.set(ip, valid);
-
-  // Periodic cleanup
-  if (rateLimitMap.size > 1000) {
-    for (const [key, ts] of rateLimitMap) {
-      const active = ts.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
-      if (active.length === 0) rateLimitMap.delete(key);
-      else rateLimitMap.set(key, active);
-    }
-  }
-
-  return valid.length <= RATE_LIMIT_MAX;
-}
-
-// ============================================
-// Auth
-// ============================================
-
-function verifyWidgetRequest(request: NextRequest): boolean {
-  const secret = process.env.GORGIAS_WIDGET_SECRET;
-  if (!secret) return true; // No secret configured, allow (dev mode)
-  const providedKey = request.headers.get('X-TellMyTale-Key');
-  return providedKey === secret;
-}
+// Rate limiter: 60 requests per minute per IP
+const rateLimiter = createRateLimiter(60);
 
 // ============================================
 // Shopify Data Enrichment
@@ -121,16 +51,6 @@ async function fetchShopifyData(email: string): Promise<{
   }
 
   try {
-    // Search for customer orders by email
-    const result = await executeComposioTool(
-      'SHOPIFY_LIST_ORDERS',
-      { status: 'any', limit: 5 },
-    ) as { data?: { orders?: ShopifyOrder[] } };
-
-    // Filter by email if the API returns all orders
-    const allOrders = result?.data?.orders || [];
-    // Shopify list_orders doesn't filter by email directly,
-    // so we also search for the customer
     const customerResult = await executeComposioTool(
       'SHOPIFY_GET_CUSTOMERS_SEARCH',
       { query: `email:${email}` },
@@ -139,7 +59,6 @@ async function fetchShopifyData(email: string): Promise<{
     const customer = customerResult?.data?.customers?.[0];
     const customerId = customer ? String(customer.id) : null;
 
-    // If we found the customer, get their specific orders
     if (customerId) {
       const customerOrders = await executeComposioTool(
         'SHOPIFY_LIST_ORDERS',
@@ -164,16 +83,12 @@ async function fetchShopifyData(email: string): Promise<{
 // ============================================
 
 export async function GET(request: NextRequest) {
-  // Auth check
-  if (!verifyWidgetRequest(request)) {
+  if (!verifyWidgetSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Rate limiting
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || request.headers.get('x-real-ip')
-    || 'unknown';
-  if (!checkRateLimit(ip)) {
+  const ip = getClientIp(request);
+  if (!rateLimiter.check(ip)) {
     return NextResponse.json(
       { error: 'Rate limit exceeded' },
       { status: 429, headers: { 'Retry-After': '60' } }
@@ -212,13 +127,11 @@ export async function GET(request: NextRequest) {
   let shopifyData: { orders: ShopifyOrder[]; customerId: string | null } = { orders: [], customerId: null };
 
   const results = await Promise.allSettled([
-    // 1. Customer profile from warehouse
     db.select()
       .from(gorgiasCustomers)
       .where(eq(gorgiasCustomers.email, email))
       .limit(1),
 
-    // 2. Last 5 tickets for this customer
     db.select({
       id: gorgiasTickets.id,
       subject: gorgiasTickets.subject,
@@ -232,7 +145,6 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(gorgiasTickets.gorgiasCreatedAt))
       .limit(5),
 
-    // 3. AI conversations
     db.select({
       id: conversations.id,
       status: conversations.status,
@@ -247,7 +159,6 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(conversations.createdAt))
       .limit(5),
 
-    // 4. Avg response/resolution time for this customer
     db.select({
       avgResponseTime: sql<number>`avg(${gorgiasTickets.firstResponseTimeSeconds})`,
       avgResolutionTime: sql<number>`avg(${gorgiasTickets.resolutionTimeSeconds})`,
@@ -256,11 +167,9 @@ export async function GET(request: NextRequest) {
       .from(gorgiasTickets)
       .where(eq(gorgiasTickets.customerEmail, email)),
 
-    // 5. Shopify live data (non-blocking)
     fetchShopifyData(email),
   ]);
 
-  // Process results with graceful degradation
   if (results[0].status === 'fulfilled') {
     customerResults = results[0].value;
     dataSources.warehouse_customer = 'ok';
@@ -307,14 +216,12 @@ export async function GET(request: NextRequest) {
   const activeAiConversations = aiConversations.filter(c => c.status === 'active' || c.status === 'escalated');
   const latestConversation = aiConversations[0] || null;
 
-  // Format response for Gorgias widget template
   const gorgiasBaseUrl = process.env.GORGIAS_DOMAIN
     ? `https://${process.env.GORGIAS_DOMAIN}.gorgias.com`
     : '';
   const dashboardUrl = process.env.TELLMYTALE_BASE_URL || '';
 
   const responseData: Record<string, unknown> = {
-    // Customer overview card
     customer_name: customer?.name || customer?.firstname || email.split('@')[0],
     customer_email: email,
     lifetime_tickets: Number(metrics?.totalTickets || customer?.ticketCount || 0),
@@ -324,13 +231,11 @@ export async function GET(request: NextRequest) {
       : 'Unknown',
     shopify_customer_id: shopifyData.customerId || customer?.shopifyCustomerId || null,
 
-    // AI assistant card
     ai_active_conversations: activeAiConversations.length,
     ai_latest_sentiment: latestConversation?.sentiment || 'none',
     ai_has_escalation: activeAiConversations.some(c => c.status === 'escalated'),
     ai_total_conversations: aiConversations.length,
 
-    // Support metrics card
     avg_response_time: metrics?.avgResponseTime
       ? formatDuration(Number(metrics.avgResponseTime))
       : 'N/A',
@@ -338,7 +243,6 @@ export async function GET(request: NextRequest) {
       ? formatDuration(Number(metrics.avgResolutionTime))
       : 'N/A',
 
-    // Recent tickets list
     recent_tickets: recentTickets.map(t => ({
       id: t.id,
       subject: t.subject || '(no subject)',
@@ -351,7 +255,6 @@ export async function GET(request: NextRequest) {
       url: gorgiasBaseUrl ? `${gorgiasBaseUrl}/app/ticket/${t.id}` : '',
     })),
 
-    // Shopify recent orders (live data)
     recent_orders: shopifyData.orders.map(o => ({
       id: o.id,
       name: o.name,
@@ -362,16 +265,13 @@ export async function GET(request: NextRequest) {
     })),
     shopify_orders_count: shopifyData.orders.length,
 
-    // Quick action links
     dashboard_url: dashboardUrl
       ? `${dashboardUrl}/dashboard/customers?search=${encodeURIComponent(email)}`
       : '',
 
-    // Data source status (helps debug widget issues)
     _data_sources: dataSources,
   };
 
-  // Cache the response
   setCache(email, responseData);
 
   return NextResponse.json(responseData);
