@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
 
       // Create wrapper stream to save response to database
       const decoder = new TextDecoder();
-      let fullResponse = '';
+      const responseChunks: string[] = [];
 
       const wrappedStream = new ReadableStream({
         async start(controller) {
@@ -189,21 +189,20 @@ export async function POST(req: NextRequest) {
               }
 
               if (value) {
-                const text = decoder.decode(value, { stream: true });
-                fullResponse += text;
+                responseChunks.push(decoder.decode(value, { stream: true }));
                 controller.enqueue(value);
               }
             }
 
             controller.close();
 
-            // Save assistant response to database after stream completes
-            if (currentConversationId && fullResponse && dbService.isAvailable()) {
-              await dbService.messages.create({
+            // Fire-and-forget: save assistant response without blocking stream closure
+            if (currentConversationId && responseChunks.length > 0 && dbService.isAvailable()) {
+              dbService.messages.create({
                 conversationId: currentConversationId,
                 role: 'assistant',
-                content: fullResponse,
-              });
+                content: responseChunks.join(''),
+              }).catch((err) => console.error('[Chat API] Failed to save response:', err));
             }
           } catch (error) {
             console.error('[Chat API] Stream error:', error);

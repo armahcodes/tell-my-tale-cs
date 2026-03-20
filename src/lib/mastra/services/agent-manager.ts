@@ -16,7 +16,7 @@ import { getProductionAgent, initProductionAgentWithComposio } from '../agents/p
 import { customerSupportWorkflow, type CustomerSupportWorkflowInput } from '../workflows/customer-support-workflow';
 import { createMemoryContext } from '../config/memory';
 import { mastraStorage } from '../config/storage';
-import { isComposioAvailable, getComposioToolsForMastra, getComposioSessionTools } from '@/lib/composio';
+import { isComposioAvailable, getComposioToolsForMastra } from '@/lib/composio';
 
 export interface AgentRequest {
   message: string;
@@ -95,38 +95,37 @@ export class AgentManagerService {
     if (isComposioAvailable()) {
       try {
         const composioToolkits = process.env.COMPOSIO_TOOLKITS?.split(',').filter(Boolean) || ['shopify'];
-        const allComposioTools: Record<string, ReturnType<typeof import('@mastra/core/tools').createTool>> = {};
 
-        // Load tools per toolkit — use 'toolkits' for shopify, 'search' for gorgias
-        for (const toolkit of composioToolkits) {
-          try {
-            const toolkitTools = await getComposioToolsForMastra(
+        // Load all toolkits in parallel for faster init
+        const toolkitResults = await Promise.allSettled(
+          composioToolkits.map(async (toolkit) => {
+            const tools = await getComposioToolsForMastra(
               toolkit === 'gorgias'
                 ? { search: 'gorgias' }
                 : { toolkits: [toolkit] }
             );
-            Object.assign(allComposioTools, toolkitTools);
-            console.log(`[AgentManager] Composio ${toolkit}: ${Object.keys(toolkitTools).length} tools`);
-          } catch (toolkitError) {
-            console.warn(`[AgentManager] Composio ${toolkit} failed (non-fatal):`, toolkitError);
+            console.log(`[AgentManager] Composio ${toolkit}: ${Object.keys(tools).length} tools`);
+            return tools;
+          })
+        );
+
+        const allComposioTools: Record<string, ReturnType<typeof import('@mastra/core/tools').createTool>> = {};
+        for (let i = 0; i < toolkitResults.length; i++) {
+          const result = toolkitResults[i];
+          if (result.status === 'fulfilled') {
+            Object.assign(allComposioTools, result.value);
+          } else {
+            console.warn(`[AgentManager] Composio ${composioToolkits[i]} failed (non-fatal):`, result.reason);
           }
         }
 
-        // Also load session-based toolRouter tools (meta-tools for dynamic discovery)
-        const sessionTools = await getComposioSessionTools({
-          toolkits: composioToolkits,
-        });
-
-        const totalDirectTools = Object.keys(allComposioTools).length;
-        const totalSessionTools = Object.keys(sessionTools).length;
-
-        if (totalDirectTools > 0) {
-          // Reinitialize agents with all Composio tools
+        const totalTools = Object.keys(allComposioTools).length;
+        if (totalTools > 0) {
           initProductionAgentWithComposio(allComposioTools);
           reinitStreamingService(allComposioTools);
-          console.log(`[AgentManager] Composio total: ${totalDirectTools} direct + ${totalSessionTools} session tools from [${composioToolkits.join(', ')}]`);
+          console.log(`[AgentManager] Composio: ${totalTools} tools from [${composioToolkits.join(', ')}]`);
         } else {
-          console.log('[AgentManager] Composio configured but no direct tools loaded');
+          console.log('[AgentManager] Composio configured but no tools loaded');
         }
       } catch (error) {
         console.warn('[AgentManager] Composio initialization failed (non-fatal):', error);

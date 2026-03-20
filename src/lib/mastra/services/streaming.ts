@@ -148,8 +148,7 @@ export class StreamingService {
   ): ReadableStream<Uint8Array> {
     const encoder = new TextEncoder();
     let retryCount = 0;
-    let fullResponse = '';
-    const toolsUsed: string[] = [];
+    const chunks: string[] = [];
 
     return new ReadableStream<Uint8Array>({
       start: async (controller) => {
@@ -160,22 +159,23 @@ export class StreamingService {
 
             while (true) {
               const { done, value } = await reader.next();
-              
+
               if (done) {
                 break;
               }
 
               if (value) {
-                fullResponse += value;
+                chunks.push(value);
                 controller.enqueue(encoder.encode(value));
               }
             }
 
             // Success - complete metrics
             if (metrics) {
+              const fullLength = chunks.reduce((sum, c) => sum + c.length, 0);
               this.observability.completeRequest(metrics, {
                 success: true,
-                tokensUsed: estimateTokens(fullResponse),
+                tokensUsed: Math.ceil(fullLength / 4),
                 toolsUsed: metrics.toolsUsed,
               });
             }
